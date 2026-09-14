@@ -1,0 +1,53 @@
+{
+  "name": "open-learn-graph",
+  "productName": "OpenLearnGraph",
+  "version": "0.1.0",
+  "description": "A local-first, knowledge-graph-centered desktop learning application.",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "author": "OpenLearnGraph contributors",
+  "license": "MIT",
+  "dependencies": {
+    "@xyflow/react": "^12.11.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-vite": "^7.11.2",
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "44.3.0",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "jsdom": "^30.0.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  },
+  "allowScripts": {
+    "electron@44.3.0": true
+  }
+}
