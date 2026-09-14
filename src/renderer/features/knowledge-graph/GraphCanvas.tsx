@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Background, BackgroundVariant, Controls, MarkerType, MiniMap, ReactFlow,
-  applyEdgeChanges, applyNodeChanges,
+  applyEdgeChanges,
   type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
 } from '@xyflow/react';
 import type { KnowledgeGraphDocument } from '../../../shared/contracts';
 import { ConceptNode, type ConceptNodeData } from '../../components/ConceptNode';
+import { applyPersistentNodeChanges } from './graphChanges';
 
 interface GraphCanvasProps {
   graph: KnowledgeGraphDocument;
@@ -20,6 +21,7 @@ export function GraphCanvas({ graph, selectedNodeId, onSelectedNodeIdChange, onG
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const nodes = useMemo<Node<ConceptNodeData>[]>(() => graph.nodes.map((node) => ({
     id: node.id, type: 'concept', position: node.position, selected: node.id === selectedNodeId,
+    initialWidth: 172, initialHeight: 56,
     data: { name: node.name, status: node.status },
   })), [graph.nodes, selectedNodeId]);
   const edges = useMemo<Edge[]>(() => graph.edges.map((edge) => ({
@@ -30,15 +32,14 @@ export function GraphCanvas({ graph, selectedNodeId, onSelectedNodeIdChange, onG
   })), [graph.edges, selectedEdgeId]);
 
   const onNodesChange = useCallback((changes: NodeChange<Node<ConceptNodeData>>[]) => {
-    const changedNodes = applyNodeChanges(changes, nodes);
-    const positions = new Map(changedNodes.map((node) => [node.id, node.position]));
-    onGraphChange({ ...graph, nodes: graph.nodes.map((node) => ({
-      ...node, position: positions.get(node.id) ?? node.position,
-    })) });
+    const changedGraph = applyPersistentNodeChanges(graph, nodes, changes);
+    if (changedGraph) onGraphChange(changedGraph);
   }, [graph, nodes, onGraphChange]);
 
   const onEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => {
-    const remaining = new Set(applyEdgeChanges(changes, edges).map((edge) => edge.id));
+    const removals = changes.filter((change) => change.type === 'remove');
+    if (removals.length === 0) return;
+    const remaining = new Set(applyEdgeChanges(removals, edges).map((edge) => edge.id));
     onGraphChange({ ...graph, edges: graph.edges.filter((edge) => remaining.has(edge.id)) });
   }, [edges, graph, onGraphChange]);
 
