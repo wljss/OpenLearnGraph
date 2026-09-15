@@ -10,6 +10,7 @@ import { errorMessage } from '../../errorMessage';
 
 interface DiagnosticRunnerProps {
   graph: KnowledgeGraphDocument;
+  initialNodeIds?: string[];
   onClose: () => void;
   onGraphUpdated: (graph: KnowledgeGraphDocument) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
@@ -37,6 +38,7 @@ function statusLabel(status: DiagnosticAttemptSummaryView['status']): string {
 
 export function DiagnosticRunner({
   graph,
+  initialNodeIds = [],
   onClose,
   onGraphUpdated,
   onMessage,
@@ -51,7 +53,11 @@ export function DiagnosticRunner({
       .map((node) => node.id),
   ), [eligibleNodes]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(
-    () => new Set(eligibleNodes.map((node) => node.id)),
+    () => {
+      const eligibleIds = new Set(eligibleNodes.map((node) => node.id));
+      const requested = initialNodeIds.filter((nodeId) => eligibleIds.has(nodeId));
+      return new Set(requested.length ? requested : eligibleIds);
+    },
   );
   const [attempts, setAttempts] = useState<DiagnosticAttemptSummaryView[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);

@@ -87,10 +87,29 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 
 M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN_PROGRESS` 尝试可以跨进程重启恢复；有 response 行且 `selected_option_id = NULL` 表示用户明确选择了“我不知道”，没有 response 行才表示尚未作答。草稿的正确性只在 main/SQLite 内部存在，不通过恢复接口暴露。提交会在单个事务中再次按完整答案 upsert 响应、写入每个概念一条 `DIAGNOSTIC_RESULT` Evidence、更新 learner state 并完成尝试。`CANCELLED` 尝试保留草稿用于历史计数，但永远不生成 Evidence。编辑或删除当前题库不会改写已经开始或完成的诊断。
 
-## 计划中的独立实体（M4+）
+## M4A 学习决策实体
+
+### tutor_decisions
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id / graph_id | TEXT | UUID 主键 / 图谱外键 |
+| target_node_id | TEXT / NULL | 目标概念；概念删除后置空，名称快照仍保留 |
+| target_node_name | TEXT | 决策当时的目标名称快照 |
+| action | TEXT | 固定为六种 Tutor 动作之一 |
+| reason_code / reason | TEXT | 稳定机器原因码与可读解释 |
+| evidence_json / context_json | TEXT | 经验证的事实依据与受限执行上下文 |
+| state_fingerprint | TEXT | 生成决策时的语义状态指纹 |
+| response | TEXT | `PENDING / ACCEPTED / DISMISSED` |
+| is_stale | INTEGER | 状态变化后标记失效，不删除旧记录 |
+| source_version | INTEGER | 确定性策略版本 |
+| created_at / updated_at | TEXT | ISO-8601 |
+
+`tutor_decisions` 是建议与用户响应的审计记录，不是 Evidence。采纳或忽略只修改 `response`；图谱语义状态或活动诊断变化会使旧记录变为 `is_stale = 1`。节点坐标不进入状态指纹，避免仅调整画布布局时制造无意义的新建议。
+
+## 计划中的独立实体（M5+）
 
 - `learning_sessions`
-- `tutor_decisions(action, target_node_id, strategy, reason, ...)`
 - `source_documents` / `source_chunks` / 节点来源关联
 
 `mastery` 和用户状态绝不进入 `knowledge_nodes`。Evidence 保留原始结果和出处，learner model 根据证据更新状态，从而允许解释任一掌握度。

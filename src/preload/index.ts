@@ -5,6 +5,7 @@ import {
   type CreateGraphInput,
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
+  type RespondTutorDecisionInput,
   type SaveAssessmentQuestionInput,
   type SaveDiagnosticAnswerInput,
   type SaveGraphInput,
@@ -33,6 +34,11 @@ const api: OpenLearnGraphApi = {
     cancelDiagnostic: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticCancel, attemptId),
     getDiagnosticResult: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticResultGet, attemptId),
     completeDiagnostic: (input: CompleteDiagnosticInput) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticComplete, input),
+  },
+  tutor: {
+    getRecommendation: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.tutorRecommendationGet, graphId),
+    listDecisions: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.tutorDecisionList, graphId),
+    respondDecision: (input: RespondTutorDecisionInput) => ipcRenderer.invoke(IPC_CHANNELS.tutorDecisionRespond, input),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

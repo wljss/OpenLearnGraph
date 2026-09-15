@@ -5,13 +5,13 @@
 ```text
 React renderer
   → window.openLearnGraph（preload 中的窄类型 API）
-  → 明确命名的 graph / learning / assessment / lifecycle IPC
-  → GraphService / LearningService / AssessmentService（Zod 边界验证）
-  → GraphRepository / LearningRepository / AssessmentRepository
+  → 明确命名的 graph / learning / assessment / tutor / lifecycle IPC
+  → GraphService / LearningService / AssessmentService / TutorService（Zod 边界验证）
+  → GraphRepository / LearningRepository / AssessmentRepository / TutorRepository
   → SQLite（Electron userData）
 ```
 
-主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、诊断与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
+主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、诊断、学习建议与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
 
 ## SQLite 决策（ADR-001）
 
@@ -34,6 +34,12 @@ React renderer
 诊断开始时在单个事务中创建 attempt，并复制题目、概念名、解析和选项为快照。renderer 只收到没有正确性标记的选项；评分在 main repository 内依据快照完成。每次选择通过窄 IPC 校验后 upsert 为草稿响应，以支持崩溃/重启恢复；恢复接口只返回所选选项，不返回 `is_correct`。提交在另一个事务中原子 upsert 全部响应、客观 Evidence、learner state 和完成状态。这样题库在诊断期间被修改或删除也不会改变本次评分依据，重复提交和跨题选项会被拒绝。
 
 同一图谱存在 `IN_PROGRESS` 尝试时不能开始另一场诊断，必须先继续或取消，避免并行尝试产生含糊的客观状态。诊断范围由经过 Zod 校验且属于当前图谱、题量合格的节点 ID 集合显式指定；历史列表最多返回最近 100 条，已完成结果始终从不可变快照和响应重建。
+
+## 学习决策边界（ADR-006）
+
+M4A 的 `TutorService` 读取 GraphRepository 投影后的知识与学习状态，并结合题库覆盖和活动诊断生成固定动作空间内的建议。纯函数策略按“继续未完成诊断 → 补强失败诊断 → 评估/练习学习中概念 → 学习已解锁概念 → 回顾已掌握图谱”的顺序决策，且不会把锁定概念作为学习目标。
+
+建议按图谱语义状态生成 SHA-256 指纹。相同状态复用已有决策；状态变化时旧决策只标记失效，保留原始理由、依据和用户响应。renderer 必须先通过受校验的 IPC 记录用户响应，再导航到概念或诊断中心。决策本身和采纳行为均不能写 Evidence 或 learner state，因而维持 `decision → user-confirmed execution → Evidence → projection` 的单向边界。
 
 ## Windows 分发（ADR-004）
 

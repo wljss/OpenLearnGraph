@@ -7,6 +7,7 @@ import type {
   RecordLearningEvidenceInput,
   SaveGraphInput,
   SelfAssessmentRating,
+  TutorDecisionView,
 } from '../shared/contracts';
 import { projectGraphLearning } from '../shared/learningProjection';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -15,6 +16,7 @@ import { DiagnosticRunner } from './features/assessment/DiagnosticRunner';
 import { QuestionManager } from './features/assessment/QuestionManager';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
+import { TutorRecommendation } from './features/tutor/TutorRecommendation';
 
 type NoticeTone = 'info' | 'success' | 'error';
 
@@ -79,8 +81,8 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [questionManagerNodeId, setQuestionManagerNodeId] = useState<string | null>(null);
-  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
-  const overlayOpen = Boolean(questionManagerNodeId || diagnosticOpen);
+  const [diagnosticNodeIds, setDiagnosticNodeIds] = useState<string[] | null>(null);
+  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds);
   const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
@@ -307,6 +309,19 @@ export function App(): React.JSX.Element {
     setEvidenceState(null);
   }, []);
 
+  const executeTutorDecision = useCallback((decision: TutorDecisionView): void => {
+    if (decision.action === 'ASSESS') {
+      setDiagnosticNodeIds(decision.targetNodeId ? [decision.targetNodeId] : []);
+      showNotice('已打开诊断中心；只有提交诊断后才会写入学习证据。');
+      return;
+    }
+    if (decision.targetNodeId) {
+      setSelectedNodeId(decision.targetNodeId);
+      setNewNodeToFocusId(null);
+      showNotice(`已定位到“${decision.targetNodeName}”；请根据建议自行学习或记录证据。`, 'success');
+    }
+  }, [showNotice]);
+
   const recordSelfAssessment = useCallback((
     nodeId: string,
     rating: SelfAssessmentRating,
@@ -475,7 +490,7 @@ export function App(): React.JSX.Element {
               className="secondary-button diagnostic-launch"
               disabled={!graph?.nodes.length || dirty || interactionBusy}
               title={dirty ? '请先保存图谱结构' : '使用客观答题证据检查掌握情况'}
-              onClick={() => setDiagnosticOpen(true)}
+              onClick={() => setDiagnosticNodeIds([])}
             >
               ◇ 图谱诊断
             </button>
@@ -499,6 +514,16 @@ export function App(): React.JSX.Element {
           <span className="status-strip-icon" aria-hidden="true" />
           <span>{notice.text}</span>
         </div>
+
+        {graph && (
+          <TutorRecommendation
+            graph={graph}
+            structureDirty={dirty}
+            disabled={interactionBusy}
+            onExecute={executeTutorDecision}
+            onMessage={showNotice}
+          />
+        )}
 
         <div className="content-grid">
           {graph ? (
@@ -559,10 +584,11 @@ export function App(): React.JSX.Element {
           onMessage={showNotice}
         />
       )}
-      {diagnosticOpen && graph && (
+      {diagnosticNodeIds && graph && (
         <DiagnosticRunner
           graph={graph}
-          onClose={() => setDiagnosticOpen(false)}
+          initialNodeIds={diagnosticNodeIds}
+          onClose={() => setDiagnosticNodeIds(null)}
           onGraphUpdated={acceptDiagnosticGraph}
           onMessage={showNotice}
         />

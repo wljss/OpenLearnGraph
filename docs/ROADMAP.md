@@ -5,7 +5,8 @@
 - **M2 — Learner State + Evidence（完成）**：独立学习者状态、证据记录与可解释状态投影；不引入 LLM。
 - **M3 — Diagnostic Assessment（完成）**：手工单选题库、不可变作答快照、图谱诊断、逐题回顾与客观证据生成。
 - **M3.1 — Diagnostic Lifecycle（完成）**：答案自动保存、中断恢复、诊断历史、范围选择与薄弱概念重测。
-- **M4 — Tutor Agent decision loop**：受约束动作空间、schema 验证、决策/执行分离。
+- **M4A — Explainable Tutor Decision Engine（完成）**：确定性本地策略、受约束动作空间、依据展示、响应与失效历史、决策/执行/状态更新分离。
+- **M4B — Tutor policy extension**：在相同契约下扩展策略评估与可选 provider；任何非确定性输出必须通过 schema 与安全回退。
 - **M5 — Adaptive learning session**：教学、练习、复习与补救会话闭环。
 - **M6 — Document import**：PDF/DOCX/Markdown/TXT 提取、分段和出处保留。
 - **M7 — AI Knowledge Graph generation**：候选图谱、人工审核与编辑。

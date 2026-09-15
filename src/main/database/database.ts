@@ -160,6 +160,32 @@ const MIGRATION_3 = `
   DROP TABLE learning_evidence_m2;
 `;
 
+const MIGRATION_4 = `
+  CREATE TABLE IF NOT EXISTS tutor_decisions (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES knowledge_graphs(id) ON DELETE CASCADE,
+    target_node_id TEXT REFERENCES knowledge_nodes(id) ON DELETE SET NULL,
+    target_node_name TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('TEACH', 'ASSESS', 'PRACTICE', 'REVIEW', 'REMEDIATE', 'ADVANCE')),
+    reason_code TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+    evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)),
+    context_json TEXT NOT NULL CHECK (json_valid(context_json)),
+    state_fingerprint TEXT NOT NULL,
+    response TEXT NOT NULL CHECK (response IN ('PENDING', 'ACCEPTED', 'DISMISSED')),
+    is_stale INTEGER NOT NULL DEFAULT 0 CHECK (is_stale IN (0, 1)),
+    source_version INTEGER NOT NULL CHECK (source_version >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS idx_tutor_decisions_graph_time
+    ON tutor_decisions(graph_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_tutor_decisions_graph_state
+    ON tutor_decisions(graph_id, state_fingerprint, is_stale);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_tutor_decisions_current_state
+    ON tutor_decisions(graph_id, state_fingerprint) WHERE is_stale = 0;
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -191,6 +217,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_3);
       database.exec('PRAGMA user_version = 3;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 4) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_4);
+      database.exec('PRAGMA user_version = 4;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

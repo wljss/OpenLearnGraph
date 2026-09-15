@@ -6,12 +6,15 @@ import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
+import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
+import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
+import { TutorService } from './services/tutorService';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -63,12 +66,18 @@ void app.whenReady().then(() => {
   database = openDatabase(path.join(app.getPath('userData'), 'openlearngraph.sqlite3'));
   const graphRepository = new GraphRepository(database);
   const learningRepository = new LearningRepository(database);
+  const assessmentRepository = new AssessmentRepository(database);
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
-    new AssessmentRepository(database),
+    assessmentRepository,
     graphRepository,
     learningRepository,
+  ));
+  registerTutorIpc(new TutorService(
+    new TutorRepository(database),
+    graphRepository,
+    assessmentRepository,
   ));
   registerLifecycleIpc();
   createWindow();

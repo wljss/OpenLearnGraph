@@ -6,7 +6,7 @@ OpenLearnGraph 将任何学习目标转化为持续演化的知识地图，由�
 
 核心循环：学习目标 → 知识图谱 → 学习者状态 → TutorDecision → 教学/评估/练习/复习 → Evidence → 状态更新 → 重规划。
 
-## 当前范围：M0–M3.1
+## 当前范围：M0–M4A
 
 - Windows 本地 Electron 应用；React Flow 是主工作区。
 - 创建、命名和加载多个知识图谱。
@@ -26,11 +26,15 @@ OpenLearnGraph 将任何学习目标转化为持续演化的知识地图，由�
 - 展示最近 100 次诊断历史，可重新打开已完成结果并针对未掌握概念发起重测。
 - 最近一次客观诊断是决定状态的证据，之后的主观自评只进入时间线，不覆盖客观结论。
 - 证据、学习状态和图谱结构均保存在本机，重启后恢复。
+- 根据当前图谱、学习状态、题库覆盖和未完成诊断生成一个确定性的下一步建议。
+- 建议动作限制为 `TEACH / ASSESS / PRACTICE / REVIEW / REMEDIATE / ADVANCE`，并展示人类可读理由和事实依据。
+- 记录建议的规则版本、目标、用户采纳/忽略响应与失效状态；相同状态复用同一建议，状态变化后保留旧记录用于审计。
+- 采纳建议只导航到概念或诊断入口，不直接产生 Evidence，也不直接改变 learner state。
 
 ## 明确不在当前范围
 
-自动出题、开放题评分、自适应选题、Tutor Agent、AI provider、文档导入、候选图谱生成、RAG、账号、云同步、遥测和自动更新均不在当前范围。M3 的题库由用户手工维护，客观结论只来自本地单选诊断；没有诊断结果时，4–5 分自评仍可形成主观的 `MASTERED` 状态。
+自动出题、开放题评分、自适应选题、生成式教学内容、LLM/AI provider、文档导入、候选图谱生成、RAG、账号、云同步、遥测和自动更新均不在当前范围。M3 的题库由用户手工维护，客观结论只来自本地单选诊断；没有诊断结果时，4–5 分自评仍可形成主观的 `MASTERED` 状态。M4A 的建议来自版本化本地规则，不伪装成 AI 推理。
 
-## 后续 Tutor Agent 约束
+## Tutor 决策约束
 
-动作空间固定为 `TEACH | ASSESS | PRACTICE | REVIEW | REMEDIATE | ADVANCE`。策略/LLM 只产出 `TutorDecision`；经运行时验证后，由应用服务执行并产生 Evidence，再由 learner model 更新状态。
+动作空间固定为 `TEACH | ASSESS | PRACTICE | REVIEW | REMEDIATE | ADVANCE`。策略/LLM 只产出 `TutorDecision`；经运行时验证后，由应用服务执行用户确认的导航或会话。只有真实学习/作答行为可以产生 Evidence，再由 learner model 更新状态。

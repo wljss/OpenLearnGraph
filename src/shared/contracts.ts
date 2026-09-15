@@ -8,6 +8,21 @@ export type LearningPhase = (typeof LEARNING_PHASES)[number];
 export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export type SelfAssessmentRating = 1 | 2 | 3 | 4 | 5;
+export const TUTOR_ACTIONS = ['TEACH', 'ASSESS', 'PRACTICE', 'REVIEW', 'REMEDIATE', 'ADVANCE'] as const;
+export type TutorAction = (typeof TUTOR_ACTIONS)[number];
+export const TUTOR_DECISION_RESPONSES = ['PENDING', 'ACCEPTED', 'DISMISSED'] as const;
+export type TutorDecisionResponse = (typeof TUTOR_DECISION_RESPONSES)[number];
+export const TUTOR_REASON_CODES = [
+  'RESUME_DIAGNOSTIC',
+  'REMEDIATE_FAILED_DIAGNOSTIC',
+  'ASSESS_WITH_QUESTION_BANK',
+  'CONTINUE_PRACTICE',
+  'ADVANCE_AFTER_MASTERY',
+  'START_FOUNDATION',
+  'REVIEW_COMPLETE_GRAPH',
+  'REVIEW_TO_UNLOCK',
+] as const;
+export type TutorReasonCode = (typeof TUTOR_REASON_CODES)[number];
 
 export const graphIdInputSchema = z.object({ graphId: z.string().uuid() });
 export const nodeIdInputSchema = z.object({
@@ -18,6 +33,13 @@ export const questionIdInputSchema = z.object({
 });
 export const attemptIdInputSchema = z.object({
   attemptId: z.string().uuid('诊断记录 ID 无效'),
+});
+export const tutorDecisionIdInputSchema = z.object({
+  decisionId: z.string().uuid('学习建议 ID 无效'),
+});
+export const respondTutorDecisionInputSchema = z.object({
+  decisionId: tutorDecisionIdInputSchema.shape.decisionId,
+  response: z.enum(TUTOR_DECISION_RESPONSES),
 });
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
@@ -130,6 +152,7 @@ export type SaveAssessmentQuestionInput = z.infer<typeof saveAssessmentQuestionI
 export type StartDiagnosticInput = z.infer<typeof startDiagnosticInputSchema>;
 export type SaveDiagnosticAnswerInput = z.infer<typeof saveDiagnosticAnswerInputSchema>;
 export type CompleteDiagnosticInput = z.infer<typeof completeDiagnosticInputSchema>;
+export type RespondTutorDecisionInput = z.infer<typeof respondTutorDecisionInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -243,6 +266,25 @@ export interface CompleteDiagnosticResult extends DiagnosticReviewView {
   evidence: LearningEvidenceView[];
   graph: KnowledgeGraphDocument;
 }
+export interface TutorDecisionContext {
+  attemptId?: string;
+}
+export interface TutorDecisionView {
+  id: string;
+  graphId: string;
+  targetNodeId: string | null;
+  targetNodeName: string;
+  action: TutorAction;
+  reasonCode: TutorReasonCode;
+  reason: string;
+  evidence: string[];
+  context: TutorDecisionContext;
+  response: TutorDecisionResponse;
+  isStale: boolean;
+  sourceVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
 export interface OpenLearnGraphApi {
   graphs: {
     list(): Promise<GraphSummary[]>;
@@ -266,6 +308,11 @@ export interface OpenLearnGraphApi {
     getDiagnosticResult(attemptId: string): Promise<DiagnosticReviewView>;
     completeDiagnostic(input: CompleteDiagnosticInput): Promise<CompleteDiagnosticResult>;
   };
+  tutor: {
+    getRecommendation(graphId: string): Promise<TutorDecisionView | null>;
+    listDecisions(graphId: string): Promise<TutorDecisionView[]>;
+    respondDecision(input: RespondTutorDecisionInput): Promise<TutorDecisionView>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -278,5 +325,7 @@ export const IPC_CHANNELS = {
   diagnosticAttemptList: 'assessment:diagnostic-attempt-list', diagnosticResume: 'assessment:diagnostic-resume',
   diagnosticAnswerSave: 'assessment:diagnostic-answer-save', diagnosticCancel: 'assessment:diagnostic-cancel',
   diagnosticResultGet: 'assessment:diagnostic-result-get', diagnosticComplete: 'assessment:diagnostic-complete',
+  tutorRecommendationGet: 'tutor:recommendation-get', tutorDecisionList: 'tutor:decision-list',
+  tutorDecisionRespond: 'tutor:decision-respond',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

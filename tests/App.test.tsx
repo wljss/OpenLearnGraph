@@ -87,6 +87,11 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       getDiagnosticResult: vi.fn(),
       completeDiagnostic: vi.fn(),
     },
+    tutor: {
+      getRecommendation: vi.fn().mockResolvedValue(null),
+      listDecisions: vi.fn().mockResolvedValue([]),
+      respondDecision: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;

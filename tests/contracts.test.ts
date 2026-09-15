@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   completeDiagnosticInputSchema,
   recordLearningEvidenceInputSchema,
+  respondTutorDecisionInputSchema,
   saveAssessmentQuestionInputSchema,
   saveDiagnosticAnswerInputSchema,
   saveGraphInputSchema,
@@ -114,5 +115,14 @@ describe('diagnostic assessment schemas', () => {
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, secondNodeId] }).success).toBe(true);
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [] }).success).toBe(false);
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, firstNodeId] }).success).toBe(false);
+  });
+});
+
+describe('tutor decision schemas', () => {
+  it('accepts only a valid decision response', () => {
+    const decisionId = '99999999-9999-4999-8999-999999999999';
+    expect(respondTutorDecisionInputSchema.safeParse({ decisionId, response: 'ACCEPTED' }).success).toBe(true);
+    expect(respondTutorDecisionInputSchema.safeParse({ decisionId, response: 'IGNORED' }).success).toBe(false);
+    expect(respondTutorDecisionInputSchema.safeParse({ decisionId: 'invalid', response: 'PENDING' }).success).toBe(false);
   });
 });
