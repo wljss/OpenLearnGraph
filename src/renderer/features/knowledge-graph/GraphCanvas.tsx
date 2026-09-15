@@ -13,23 +13,29 @@ interface GraphCanvasProps {
   selectedNodeId: string | null;
   onSelectedNodeIdChange: (id: string | null) => void;
   onGraphChange: (graph: KnowledgeGraphDocument) => void;
-  onMessage: (message: string) => void;
+  onAddNode: () => void;
+  onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
 const nodeTypes = { concept: ConceptNode };
 
-export function GraphCanvas({ graph, selectedNodeId, onSelectedNodeIdChange, onGraphChange, onMessage }: GraphCanvasProps): React.JSX.Element {
+export function GraphCanvas({ graph, selectedNodeId, onSelectedNodeIdChange, onGraphChange, onAddNode, onMessage }: GraphCanvasProps): React.JSX.Element {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const nodes = useMemo<Node<ConceptNodeData>[]>(() => graph.nodes.map((node) => ({
     id: node.id, type: 'concept', position: node.position, selected: node.id === selectedNodeId,
-    initialWidth: 172, initialHeight: 56,
+    initialWidth: 172, initialHeight: 56, deletable: false,
+    ariaLabel: `${node.name}，状态：${node.status}`,
     data: { name: node.name, status: node.status },
   })), [graph.nodes, selectedNodeId]);
-  const edges = useMemo<Edge[]>(() => graph.edges.map((edge) => ({
-    id: edge.id, source: edge.sourceNodeId, target: edge.targetNodeId,
-    selected: edge.id === selectedEdgeId,
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#708090' },
-    style: { stroke: '#708090', strokeWidth: 2 },
-  })), [graph.edges, selectedEdgeId]);
+  const edges = useMemo<Edge[]>(() => {
+    const nodeNames = new Map(graph.nodes.map((node) => [node.id, node.name]));
+    return graph.edges.map((edge) => ({
+      id: edge.id, source: edge.sourceNodeId, target: edge.targetNodeId,
+      selected: edge.id === selectedEdgeId,
+      ariaLabel: `${nodeNames.get(edge.sourceNodeId) ?? '概念'} 是 ${nodeNames.get(edge.targetNodeId) ?? '概念'} 的先修概念`,
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#708090' },
+      style: { stroke: '#708090', strokeWidth: 2 },
+    }));
+  }, [graph.edges, graph.nodes, selectedEdgeId]);
 
   const onNodesChange = useCallback((changes: NodeChange<Node<ConceptNodeData>>[]) => {
     const changedGraph = applyPersistentNodeChanges(graph, nodes, changes);
@@ -47,30 +53,39 @@ export function GraphCanvas({ graph, selectedNodeId, onSelectedNodeIdChange, onG
     const source = connection.source;
     const target = connection.target;
     if (!source || !target) return;
-    if (source === target) { onMessage('不能把概念设为自己的先修条件。'); return; }
+    if (source === target) { onMessage('不能把概念设为自己的先修条件。', 'error'); return; }
     if (graph.edges.some((edge) => edge.sourceNodeId === source && edge.targetNodeId === target)) {
-      onMessage('这条先修关系已经存在。'); return;
+      onMessage('这条先修关系已经存在。', 'error'); return;
     }
     onGraphChange({ ...graph, edges: [...graph.edges, {
       id: crypto.randomUUID(), graphId: graph.id, sourceNodeId: source,
       targetNodeId: target, relationship: 'PREREQUISITE',
     }] });
-    onMessage('已添加先修关系，保存后写入本地数据库。');
+    onMessage('已添加先修关系，保存后写入本地数据库。', 'success');
   }, [graph, onGraphChange, onMessage]);
 
   const deleteSelectedEdge = (): void => {
     if (!selectedEdgeId) return;
     onGraphChange({ ...graph, edges: graph.edges.filter((edge) => edge.id !== selectedEdgeId) });
     setSelectedEdgeId(null);
-    onMessage('已删除先修关系，保存后生效。');
+    onMessage('已删除先修关系，保存后生效。', 'success');
   };
 
   return (
     <section className="graph-stage" aria-label="知识图谱画布">
-      <div className="graph-help">
-        从节点右侧拖到另一节点左侧，以创建“先修于”关系
-        {selectedEdgeId && <button className="danger-link" type="button" onClick={deleteSelectedEdge}>删除选中的关系</button>}
-      </div>
+      {graph.nodes.length === 0 ? (
+        <div className="graph-empty-state">
+          <div className="graph-empty-icon" aria-hidden="true">＋</div>
+          <h2>从第一个概念开始</h2>
+          <p>添加你想学习的知识点，再用箭头整理它们的先修顺序。</p>
+          <button className="primary-button" type="button" onClick={onAddNode}>添加第一个概念</button>
+        </div>
+      ) : (
+        <div className="graph-help">
+          从节点右侧拖到另一节点左侧，以创建“先修于”关系
+          {selectedEdgeId && <button className="danger-link" type="button" onClick={deleteSelectedEdge}>删除选中的关系</button>}
+        </div>
+      )}
       <ReactFlow
         key={graph.id} nodes={nodes} edges={edges} nodeTypes={nodeTypes}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}

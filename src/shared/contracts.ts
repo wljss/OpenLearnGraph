@@ -19,6 +19,7 @@ export const graphEdgeInputSchema = z.object({
   targetNodeId: z.string().uuid(),
   relationship: z.literal('PREREQUISITE'),
 });
+export const unsavedChangesInputSchema = z.boolean();
 export const saveGraphInputSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1, '图谱名称不能为空').max(120),
@@ -64,7 +65,11 @@ export interface OpenLearnGraphApi {
     load(graphId: string): Promise<KnowledgeGraphDocument | null>;
     save(input: SaveGraphInput): Promise<KnowledgeGraphDocument>;
   };
+  lifecycle: {
+    setUnsavedChanges(hasUnsavedChanges: boolean): void;
+  };
 }
 export const IPC_CHANNELS = {
   graphList: 'graph:list', graphCreate: 'graph:create', graphLoad: 'graph:load', graphSave: 'graph:save',
+  setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

@@ -49,13 +49,14 @@ npm.cmd run make
 ## 使用 M1
 
 1. 在左侧输入名称并创建图谱。
-2. 点击“添加概念”，在右侧编辑名称和描述。
+2. 点击“添加概念”；新概念会自动选中并聚焦名称输入框，可直接输入名称和描述。
 3. 拖动节点改变布局；从一个节点右侧连接点拖到另一个节点左侧连接点，表示“前者是后者的先修概念”。
 4. 选中边后点击画布上方的删除操作，或按 Delete；选中节点可在右侧删除。
-5. 点击“保存更改”。重启应用后会从 SQLite 恢复图谱。
+5. 点击“保存更改”或按 `Ctrl+S`。重启应用后会从 SQLite 恢复图谱。
+6. 有未保存更改时，切换/新建图谱、删除概念和退出应用都会给出明确提示或确认。
 
 ## 数据位置与安全
 
-数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 暴露的四个图谱方法可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
+数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 明确暴露的图谱操作与未保存状态通知可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
 
 更多设计说明见 [架构](docs/ARCHITECTURE.md)、[数据模型](docs/DATA_MODEL.md)、[产品规格](docs/PRODUCT_SPEC.md)和[路线图](docs/ROADMAP.md)。

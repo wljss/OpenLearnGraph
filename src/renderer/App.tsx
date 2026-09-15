@@ -1,31 +1,100 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphSummary, KnowledgeGraphDocument, KnowledgeNodeView, SaveGraphInput } from '../shared/contracts';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
 
+type NoticeTone = 'info' | 'success' | 'error';
+
+interface Notice {
+  text: string;
+  tone: NoticeTone;
+}
+
+interface Confirmation {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  action: () => void | Promise<void>;
+}
+
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message.replace(/^Error invoking remote method '[^']+': /, '');
+  if (error instanceof Error) {
+    return error.message
+      .replace(/^Error invoking remote method '[^']+': /, '')
+      .replace(/^Error: /, '');
+  }
   return '发生了未知错误';
 }
 
+function nextConceptName(nodes: KnowledgeNodeView[]): string {
+  const existingNames = new Set(nodes.map((node) => node.name.trim().toLocaleLowerCase()));
+  let index = 1;
+  while (existingNames.has(`新概念 ${index}`.toLocaleLowerCase())) index += 1;
+  return `新概念 ${index}`;
+}
+
+function nextNodePosition(nodes: KnowledgeNodeView[]): { x: number; y: number } {
+  const columns = 4;
+  for (let index = 0; index <= nodes.length; index += 1) {
+    const candidate = {
+      x: 90 + (index % columns) * 230,
+      y: 90 + Math.floor(index / columns) * 140,
+    };
+    const occupied = nodes.some((node) => (
+      Math.abs(node.position.x - candidate.x) < 180
+      && Math.abs(node.position.y - candidate.y) < 90
+    ));
+    if (!occupied) return candidate;
+  }
+  return { x: 90, y: 90 + Math.ceil(nodes.length / columns) * 140 };
+}
+
+function toSummary(graph: KnowledgeGraphDocument): GraphSummary {
+  const { id, name, createdAt, updatedAt } = graph;
+  return { id, name, createdAt, updatedAt };
+}
+
 export function App(): React.JSX.Element {
+  const graphNameInputRef = useRef<HTMLInputElement>(null);
   const [graphs, setGraphs] = useState<GraphSummary[]>([]);
   const [graph, setGraph] = useState<KnowledgeGraphDocument | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [newNodeToFocusId, setNewNodeToFocusId] = useState<string | null>(null);
   const [newGraphName, setNewGraphName] = useState('');
   const [dirty, setDirty] = useState(false);
-  const [message, setMessage] = useState('正在加载本地知识图谱……');
+  const [notice, setNotice] = useState<Notice>({
+    text: '正在加载本地知识图谱……',
+    tone: 'info',
+  });
   const [busy, setBusy] = useState(true);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+
+  const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
+    setNotice({ text, tone });
+  }, []);
+
+  useEffect(() => {
+    window.openLearnGraph.lifecycle.setUnsavedChanges(dirty);
+  }, [dirty]);
 
   const loadGraph = useCallback(async (graphId: string): Promise<void> => {
     setBusy(true);
     try {
       const loaded = await window.openLearnGraph.graphs.load(graphId);
-      setGraph(loaded); setSelectedNodeId(null); setDirty(false);
-      setMessage(loaded ? '已从本地 SQLite 加载。' : '该知识图谱不存在。');
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { setBusy(false); }
-  }, []);
+      setGraph(loaded);
+      if (!loaded) setGraphs((current) => current.filter((item) => item.id !== graphId));
+      setSelectedNodeId(null);
+      setNewNodeToFocusId(null);
+      setDirty(false);
+      showNotice(loaded ? '已从本机加载知识图谱。' : '该知识图谱不存在。', loaded ? 'success' : 'error');
+    } catch (error) {
+      showNotice(`加载失败：${errorMessage(error)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [showNotice]);
 
   useEffect(() => {
     let active = true;
@@ -33,101 +102,315 @@ export function App(): React.JSX.Element {
       if (!active) return;
       setGraphs(items);
       if (items[0]) await loadGraph(items[0].id);
-      else { setMessage('创建第一个知识图谱，开始搭建学习地图。'); setBusy(false); }
-    }).catch((error: unknown) => { if (active) { setMessage(errorMessage(error)); setBusy(false); } });
+      else {
+        showNotice('创建第一个知识图谱，开始搭建学习地图。');
+        setBusy(false);
+      }
+    }).catch((error: unknown) => {
+      if (active) {
+        showNotice(`加载失败：${errorMessage(error)}`, 'error');
+        setBusy(false);
+      }
+    });
     return () => { active = false; };
-  }, [loadGraph]);
+  }, [loadGraph, showNotice]);
 
-  const selectedNode = useMemo(() => graph?.nodes.find((node) => node.id === selectedNodeId) ?? null, [graph, selectedNodeId]);
-  const replaceGraph = (next: KnowledgeGraphDocument): void => { setGraph(next); setDirty(true); };
+  const selectedNode = useMemo(
+    () => graph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [graph, selectedNodeId],
+  );
 
-  const createGraph = async (event: React.FormEvent): Promise<void> => {
-    event.preventDefault();
-    if (!newGraphName.trim()) { setMessage('图谱名称不能为空。'); return; }
+  const replaceGraph = useCallback((next: KnowledgeGraphDocument): void => {
+    setGraph(next);
+    setDirty(true);
+    showNotice('有尚未保存的更改。按 Ctrl+S 保存。');
+  }, [showNotice]);
+
+  const performCreateGraph = useCallback(async (name: string): Promise<void> => {
     setBusy(true);
     try {
-      const created = await window.openLearnGraph.graphs.create({ name: newGraphName });
-      setGraphs(await window.openLearnGraph.graphs.list());
-      setGraph(created); setNewGraphName(''); setDirty(false); setSelectedNodeId(null);
-      setMessage('知识图谱已创建并保存到本地。');
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { setBusy(false); }
+      const created = await window.openLearnGraph.graphs.create({ name });
+      setGraphs((current) => [toSummary(created), ...current.filter((item) => item.id !== created.id)]);
+      setGraph(created);
+      setNewGraphName('');
+      setDirty(false);
+      setSelectedNodeId(null);
+      setNewNodeToFocusId(null);
+      showNotice('知识图谱已创建并保存到本机。', 'success');
+    } catch (error) {
+      showNotice(`创建失败：${errorMessage(error)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [showNotice]);
+
+  const createGraph = (event: React.FormEvent): void => {
+    event.preventDefault();
+    const name = newGraphName.trim();
+    if (!name) {
+      showNotice('图谱名称不能为空。', 'error');
+      return;
+    }
+    if (dirty) {
+      setConfirmation({
+        title: '创建新的知识图谱？',
+        description: '当前图谱还有尚未保存的更改。继续创建会放弃这些更改。',
+        confirmLabel: '放弃更改并创建',
+        destructive: true,
+        action: () => performCreateGraph(name),
+      });
+      return;
+    }
+    void performCreateGraph(name);
   };
 
-  const addNode = (): void => {
+  const requestLoadGraph = (graphId: string): void => {
+    if (graphId === graph?.id || busy) return;
+    if (dirty) {
+      setConfirmation({
+        title: '切换知识图谱？',
+        description: '当前图谱还有尚未保存的更改。切换后，这些更改将会丢失。',
+        confirmLabel: '放弃更改并切换',
+        destructive: true,
+        action: () => loadGraph(graphId),
+      });
+      return;
+    }
+    void loadGraph(graphId);
+  };
+
+  const addNode = useCallback((): void => {
     if (!graph) return;
-    const offset = graph.nodes.length * 36;
     const node: KnowledgeNodeView = {
-      id: crypto.randomUUID(), graphId: graph.id, name: '新概念', description: '',
-      position: { x: 120 + (offset % 360), y: 120 + (offset % 240) }, status: 'AVAILABLE',
+      id: crypto.randomUUID(),
+      graphId: graph.id,
+      name: nextConceptName(graph.nodes),
+      description: '',
+      position: nextNodePosition(graph.nodes),
+      status: 'AVAILABLE',
     };
     replaceGraph({ ...graph, nodes: [...graph.nodes, node] });
-    setSelectedNodeId(node.id); setMessage('已添加概念，请在右侧编辑并保存。');
-  };
+    setSelectedNodeId(node.id);
+    setNewNodeToFocusId(node.id);
+    showNotice('已添加概念。可以直接输入名称，完成后请保存。');
+  }, [graph, replaceGraph, showNotice]);
 
   const updateNode = (updated: KnowledgeNodeView): void => {
-    if (graph) replaceGraph({ ...graph, nodes: graph.nodes.map((node) => node.id === updated.id ? updated : node) });
-  };
-  const deleteNode = (nodeId: string): void => {
     if (!graph) return;
-    replaceGraph({ ...graph, nodes: graph.nodes.filter((node) => node.id !== nodeId),
-      edges: graph.edges.filter((edge) => edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId) });
-    setSelectedNodeId(null); setMessage('概念及其相连关系已移除，保存后生效。');
+    replaceGraph({
+      ...graph,
+      nodes: graph.nodes.map((node) => node.id === updated.id ? updated : node),
+    });
   };
 
-  const saveGraph = async (): Promise<void> => {
+  const deleteNode = (nodeId: string): void => {
     if (!graph) return;
+    const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    const connectedEdgeCount = graph.edges.filter(
+      (edge) => edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId,
+    ).length;
+    setConfirmation({
+      title: `删除“${node.name || '未命名概念'}”？`,
+      description: connectedEdgeCount
+        ? `此操作还会移除与它相连的 ${connectedEdgeCount} 条先修关系。只有点击保存后才会写入本机。`
+        : '此概念将从当前图谱中移除。只有点击保存后才会写入本机。',
+      confirmLabel: '删除概念',
+      destructive: true,
+      action: () => {
+        replaceGraph({
+          ...graph,
+          nodes: graph.nodes.filter((candidate) => candidate.id !== nodeId),
+          edges: graph.edges.filter(
+            (edge) => edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId,
+          ),
+        });
+        setSelectedNodeId(null);
+        setNewNodeToFocusId(null);
+        showNotice('概念及其相连关系已移除。保存后生效。');
+      },
+    });
+  };
+
+  const saveGraph = useCallback(async (): Promise<void> => {
+    if (!graph || busy || !dirty) return;
+    if (!graph.name.trim()) {
+      graphNameInputRef.current?.focus();
+      showNotice('保存失败：图谱名称不能为空。', 'error');
+      return;
+    }
+    const invalidNodeIndex = graph.nodes.findIndex((node) => !node.name.trim());
+    if (invalidNodeIndex >= 0) {
+      setSelectedNodeId(graph.nodes[invalidNodeIndex].id);
+      setNewNodeToFocusId(graph.nodes[invalidNodeIndex].id);
+      showNotice(`保存失败：第 ${invalidNodeIndex + 1} 个概念名称不能为空。`, 'error');
+      return;
+    }
+
     const input: SaveGraphInput = {
-      id: graph.id, name: graph.name,
+      id: graph.id,
+      name: graph.name,
       nodes: graph.nodes.map(({ id, name, description, position }) => ({ id, name, description, position })),
-      edges: graph.edges.map(({ id, sourceNodeId, targetNodeId, relationship }) => ({ id, sourceNodeId, targetNodeId, relationship })),
+      edges: graph.edges.map(({ id, sourceNodeId, targetNodeId, relationship }) => ({
+        id,
+        sourceNodeId,
+        targetNodeId,
+        relationship,
+      })),
     };
     setBusy(true);
     try {
-      setGraph(await window.openLearnGraph.graphs.save(input));
-      setGraphs(await window.openLearnGraph.graphs.list()); setDirty(false);
-      setMessage('全部更改已保存到本地 SQLite。');
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { setBusy(false); }
+      const saved = await window.openLearnGraph.graphs.save(input);
+      setGraph(saved);
+      setGraphs((current) => [toSummary(saved), ...current.filter((item) => item.id !== saved.id)]);
+      setDirty(false);
+      setNewNodeToFocusId(null);
+      showNotice('全部更改已安全保存到本机。', 'success');
+    } catch (error) {
+      showNotice(`保存失败：${errorMessage(error)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, dirty, graph, showNotice]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's') {
+        event.preventDefault();
+        void saveGraph();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [saveGraph]);
+
+  const confirmAction = (): void => {
+    const action = confirmation?.action;
+    setConfirmation(null);
+    if (action) void action();
   };
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">OL</div><div><strong>OpenLearnGraph</strong><span>本地知识学习地图</span></div></div>
+        <div className="brand">
+          <div className="brand-mark">OL</div>
+          <div><strong>OpenLearnGraph</strong><span>本地知识学习地图</span></div>
+        </div>
         <div className="sidebar-heading">学习图谱</div>
         <nav className="graph-list" aria-label="知识图谱列表">
-          {graphs.map((item) => <button key={item.id} className={item.id === graph?.id ? 'active' : ''} type="button" onClick={() => void loadGraph(item.id)}><span className="graph-glyph">⌘</span><span>{item.name}</span></button>)}
+          {graphs.map((item) => (
+            <button
+              key={item.id}
+              className={item.id === graph?.id ? 'active' : ''}
+              type="button"
+              disabled={busy}
+              aria-current={item.id === graph?.id ? 'page' : undefined}
+              onClick={() => requestLoadGraph(item.id)}
+            >
+              <span className="graph-glyph" aria-hidden="true">⌘</span>
+              <span className="graph-list-name">{item.name}</span>
+              {item.id === graph?.id && dirty && <span className="unsaved-dot" title="有尚未保存的更改" />}
+            </button>
+          ))}
         </nav>
-        <form className="new-graph-form" onSubmit={(event) => void createGraph(event)}>
-          <input aria-label="新图谱名称" value={newGraphName} maxLength={120} placeholder="新图谱名称" onChange={(event) => setNewGraphName(event.target.value)} />
-          <button type="submit" disabled={busy}>＋ 创建图谱</button>
+        <form className="new-graph-form" onSubmit={createGraph}>
+          <input
+            aria-label="新图谱名称"
+            value={newGraphName}
+            maxLength={120}
+            placeholder="例如：机器学习基础"
+            onChange={(event) => setNewGraphName(event.target.value)}
+          />
+          <button type="submit" disabled={busy || !newGraphName.trim()}>＋ 创建图谱</button>
         </form>
-        <button className="import-placeholder" type="button" disabled title="将在 M6 实现">⇧ 导入书籍 <span>M6</span></button>
+        <button className="import-placeholder" type="button" disabled title="将在 M6 实现">
+          ⇧ 导入书籍 <span>M6</span>
+        </button>
         <div className="local-note">数据仅保存在此设备</div>
       </aside>
+
       <section className="workspace">
         <header className="topbar">
           <div className="graph-name-wrap">
-            {graph ? <input className="graph-name" aria-label="图谱名称" value={graph.name} maxLength={120} onChange={(event) => replaceGraph({ ...graph, name: event.target.value })} /> : <h1>知识图谱</h1>}
-            <span>{graph ? `${graph.nodes.length} 个概念 · ${graph.edges.length} 条关系` : '尚未创建图谱'}</span>
+            {graph ? (
+              <input
+                ref={graphNameInputRef}
+                className={`graph-name ${!graph.name.trim() ? 'input-invalid' : ''}`}
+                aria-label="图谱名称"
+                aria-invalid={!graph.name.trim()}
+                value={graph.name}
+                maxLength={120}
+                onChange={(event) => replaceGraph({ ...graph, name: event.target.value })}
+              />
+            ) : <h1>知识图谱</h1>}
+            <span>
+              {graph ? `${graph.nodes.length} 个概念 · ${graph.edges.length} 条关系${dirty ? ' · 尚未保存' : ''}` : '尚未创建图谱'}
+            </span>
           </div>
           <div className="top-actions">
-            <button type="button" className="secondary-button" disabled={!graph} onClick={addNode}>＋ 添加概念</button>
-            <button type="button" className="primary-button" disabled={!graph || busy} onClick={() => void saveGraph()}>{busy ? '处理中…' : dirty ? '保存更改 ●' : '已保存'}</button>
+            <button type="button" className="secondary-button" disabled={!graph || busy} onClick={addNode}>
+              ＋ 添加概念
+            </button>
+            <button
+              type="button"
+              className={`primary-button ${!dirty ? 'saved-button' : ''}`}
+              disabled={!graph || busy || !dirty}
+              title="保存知识图谱（Ctrl+S）"
+              onClick={() => void saveGraph()}
+            >
+              {busy ? '处理中…' : dirty ? '保存更改' : '✓ 已保存'}
+              {dirty && <kbd>Ctrl S</kbd>}
+            </button>
           </div>
         </header>
-        <div className="status-strip" role="status">{message}</div>
+
+        <div className={`status-strip status-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>
+          <span className="status-strip-icon" aria-hidden="true" />
+          <span>{notice.text}</span>
+        </div>
+
         <div className="content-grid">
-          {graph ? <GraphCanvas graph={graph} selectedNodeId={selectedNodeId} onSelectedNodeIdChange={setSelectedNodeId} onGraphChange={replaceGraph} onMessage={setMessage} /> :
-            <section className="empty-canvas"><div className="empty-map">⌘</div><h2>把学习目标变成一张活的知识地图</h2><p>请在左侧创建知识图谱。之后你可以添加概念，并用有向边表达先修关系。</p></section>}
-          <NodeDetails graph={graph ?? emptyGraph} node={selectedNode} onUpdate={updateNode} onDelete={deleteNode} />
+          {graph ? (
+            <GraphCanvas
+              graph={graph}
+              selectedNodeId={selectedNodeId}
+              onSelectedNodeIdChange={(nodeId) => {
+                setSelectedNodeId(nodeId);
+                if (nodeId !== newNodeToFocusId) setNewNodeToFocusId(null);
+              }}
+              onGraphChange={replaceGraph}
+              onAddNode={addNode}
+              onMessage={showNotice}
+            />
+          ) : (
+            <section className="empty-canvas">
+              <div className="empty-map" aria-hidden="true">⌘</div>
+              <h2>把学习目标变成一张活的知识地图</h2>
+              <p>请在左侧创建知识图谱。之后你可以添加概念，并用有向边表达先修关系。</p>
+            </section>
+          )}
+          <NodeDetails
+            graph={graph}
+            node={selectedNode}
+            focusNodeNameId={newNodeToFocusId}
+            onAddNode={addNode}
+            onUpdate={updateNode}
+            onDelete={deleteNode}
+          />
         </div>
       </section>
+
+      {confirmation && (
+        <ConfirmDialog
+          title={confirmation.title}
+          description={confirmation.description}
+          confirmLabel={confirmation.confirmLabel}
+          destructive={confirmation.destructive}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={confirmAction}
+        />
+      )}
     </main>
   );
 }
-
-const emptyGraph: KnowledgeGraphDocument = {
-  id: '00000000-0000-0000-0000-000000000000', name: '', createdAt: '', updatedAt: '', nodes: [], edges: [],
-};

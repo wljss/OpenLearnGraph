@@ -8,5 +8,10 @@ const api: OpenLearnGraphApi = {
     load: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.graphLoad, graphId),
     save: (input: SaveGraphInput) => ipcRenderer.invoke(IPC_CHANNELS.graphSave, input),
   },
+  lifecycle: {
+    setUnsavedChanges: (hasUnsavedChanges: boolean) => {
+      ipcRenderer.send(IPC_CHANNELS.setUnsavedChanges, hasUnsavedChanges);
+    },
+  },
 };
 contextBridge.exposeInMainWorld('openLearnGraph', api);

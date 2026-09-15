@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeGraphDocument } from '../src/shared/contracts';
 import { GraphCanvas } from '../src/renderer/features/knowledge-graph/GraphCanvas';
@@ -36,6 +36,7 @@ describe('GraphCanvas', () => {
           selectedNodeId={null}
           onSelectedNodeIdChange={vi.fn()}
           onGraphChange={vi.fn()}
+          onAddNode={vi.fn()}
           onMessage={vi.fn()}
         />
       </div>,
@@ -43,6 +44,25 @@ describe('GraphCanvas', () => {
 
     expect(screen.getByText('可见概念')).toBeVisible();
     expect(screen.getByTestId(`rf__node-${graph.nodes[0].id}`)).toHaveStyle({ visibility: 'visible' });
+  });
+
+  it('offers a direct action when the graph has no concepts', () => {
+    const onAddNode = vi.fn();
+    render(
+      <div style={{ width: 800, height: 600 }}>
+        <GraphCanvas
+          graph={{ ...graph, nodes: [] }}
+          selectedNodeId={null}
+          onSelectedNodeIdChange={vi.fn()}
+          onGraphChange={vi.fn()}
+          onAddNode={onAddNode}
+          onMessage={vi.fn()}
+        />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '添加第一个概念' }));
+    expect(onAddNode).toHaveBeenCalledOnce();
   });
 
   it('ignores transient dimension changes instead of rebuilding domain nodes', () => {

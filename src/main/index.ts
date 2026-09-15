@@ -1,8 +1,9 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
+import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { GraphRepository } from './repositories/graphRepository';
 import { GraphService } from './services/graphService';
 
@@ -23,6 +24,26 @@ function createWindow(): void {
     },
   });
   window.setMenuBarVisibility(false);
+  let allowClose = false;
+  window.on('close', (event) => {
+    if (allowClose || !hasUnsavedChanges(window.webContents)) return;
+
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(window, {
+      type: 'warning',
+      title: '有尚未保存的更改',
+      message: '当前知识图谱还有尚未保存的更改。',
+      detail: '如果现在退出，这些更改将会丢失。',
+      buttons: ['继续编辑', '放弃更改并退出'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice === 1) {
+      allowClose = true;
+      window.close();
+    }
+  });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
@@ -35,6 +56,7 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   database = openDatabase(path.join(app.getPath('userData'), 'openlearngraph.sqlite3'));
   registerGraphIpc(new GraphService(new GraphRepository(database)));
+  registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -42,4 +64,4 @@ void app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => { database?.close(); database = undefined; });
+app.on('will-quit', () => { database?.close(); database = undefined; });

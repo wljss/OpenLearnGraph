@@ -13,6 +13,21 @@ let service: GraphService;
 beforeEach(() => { database = openDatabase(':memory:'); service = new GraphService(new GraphRepository(database)); });
 afterEach(() => database.close());
 describe('graph persistence', () => {
+  it('returns a readable validation error for a blank concept name', () => {
+    const graph = service.create({ name: '错误提示测试' });
+    expect(() => service.save({
+      id: graph.id,
+      name: graph.name,
+      nodes: [{
+        id: '88888888-8888-4888-8888-888888888888',
+        name: '   ',
+        description: '',
+        position: { x: 0, y: 0 },
+      }],
+      edges: [],
+    })).toThrow('第 1 个概念：概念名称不能为空');
+  });
+
   it('creates, saves and restores a graph including positions and edges', () => {
     const graph = service.create({ name: '  深度学习  ' });
     const sourceId = '11111111-1111-4111-8111-111111111111';
