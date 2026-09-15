@@ -19,6 +19,21 @@ export const questionIdInputSchema = z.object({
 export const attemptIdInputSchema = z.object({
   attemptId: z.string().uuid('诊断记录 ID 无效'),
 });
+export const startDiagnosticInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  nodeIds: z.array(nodeIdInputSchema.shape.nodeId)
+    .min(1, '请至少选择一个要诊断的概念')
+    .max(500, '一次诊断最多选择 500 个概念'),
+}).superRefine((input, context) => {
+  if (new Set(input.nodeIds).size !== input.nodeIds.length) {
+    context.addIssue({ code: 'custom', message: '诊断概念不能重复', path: ['nodeIds'] });
+  }
+});
+export const saveDiagnosticAnswerInputSchema = z.object({
+  attemptId: attemptIdInputSchema.shape.attemptId,
+  attemptQuestionId: z.string().uuid('诊断题目 ID 无效'),
+  selectedOptionId: z.string().uuid('答案选项 ID 无效').nullable(),
+});
 export const createGraphInputSchema = z.object({
   name: z.string().trim().min(1, '图谱名称不能为空').max(120),
 });
@@ -112,6 +127,8 @@ export type CreateGraphInput = z.infer<typeof createGraphInputSchema>;
 export type SaveGraphInput = z.infer<typeof saveGraphInputSchema>;
 export type RecordLearningEvidenceInput = z.infer<typeof recordLearningEvidenceInputSchema>;
 export type SaveAssessmentQuestionInput = z.infer<typeof saveAssessmentQuestionInputSchema>;
+export type StartDiagnosticInput = z.infer<typeof startDiagnosticInputSchema>;
+export type SaveDiagnosticAnswerInput = z.infer<typeof saveDiagnosticAnswerInputSchema>;
 export type CompleteDiagnosticInput = z.infer<typeof completeDiagnosticInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
@@ -177,6 +194,25 @@ export interface DiagnosticAttemptView {
   startedAt: string;
   questions: DiagnosticQuestionView[];
 }
+export type DiagnosticAttemptStatus = 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export interface DiagnosticAttemptSummaryView {
+  id: string;
+  graphId: string;
+  status: DiagnosticAttemptStatus;
+  startedAt: string;
+  completedAt: string | null;
+  questionCount: number;
+  answeredCount: number;
+  correctCount: number | null;
+  nodeCount: number;
+}
+export interface DiagnosticDraftAnswerView {
+  attemptQuestionId: string;
+  selectedOptionId: string | null;
+}
+export interface ResumableDiagnosticAttemptView extends DiagnosticAttemptView {
+  answers: DiagnosticDraftAnswerView[];
+}
 export interface DiagnosticQuestionResult {
   attemptQuestionId: string;
   nodeId: string;
@@ -194,13 +230,16 @@ export interface DiagnosticNodeResult {
   questionCount: number;
   passed: boolean;
 }
-export interface CompleteDiagnosticResult {
+export interface DiagnosticReviewView {
   attemptId: string;
+  startedAt: string;
   completedAt: string;
   correctCount: number;
   questionCount: number;
   nodeResults: DiagnosticNodeResult[];
   questionResults: DiagnosticQuestionResult[];
+}
+export interface CompleteDiagnosticResult extends DiagnosticReviewView {
   evidence: LearningEvidenceView[];
   graph: KnowledgeGraphDocument;
 }
@@ -219,8 +258,12 @@ export interface OpenLearnGraphApi {
     listQuestions(nodeId: string): Promise<AssessmentQuestionView[]>;
     saveQuestion(input: SaveAssessmentQuestionInput): Promise<AssessmentQuestionView>;
     deleteQuestion(questionId: string): Promise<void>;
-    startDiagnostic(graphId: string): Promise<DiagnosticAttemptView>;
+    listDiagnosticAttempts(graphId: string): Promise<DiagnosticAttemptSummaryView[]>;
+    startDiagnostic(input: StartDiagnosticInput): Promise<DiagnosticAttemptView>;
+    resumeDiagnostic(attemptId: string): Promise<ResumableDiagnosticAttemptView>;
+    saveDiagnosticAnswer(input: SaveDiagnosticAnswerInput): Promise<void>;
     cancelDiagnostic(attemptId: string): Promise<void>;
+    getDiagnosticResult(attemptId: string): Promise<DiagnosticReviewView>;
     completeDiagnostic(input: CompleteDiagnosticInput): Promise<CompleteDiagnosticResult>;
   };
   lifecycle: {
@@ -232,6 +275,8 @@ export const IPC_CHANNELS = {
   learningEvidenceList: 'learning:evidence-list', learningEvidenceRecord: 'learning:evidence-record',
   assessmentQuestionList: 'assessment:question-list', assessmentQuestionSave: 'assessment:question-save',
   assessmentQuestionDelete: 'assessment:question-delete', diagnosticStart: 'assessment:diagnostic-start',
-  diagnosticCancel: 'assessment:diagnostic-cancel', diagnosticComplete: 'assessment:diagnostic-complete',
+  diagnosticAttemptList: 'assessment:diagnostic-attempt-list', diagnosticResume: 'assessment:diagnostic-resume',
+  diagnosticAnswerSave: 'assessment:diagnostic-answer-save', diagnosticCancel: 'assessment:diagnostic-cancel',
+  diagnosticResultGet: 'assessment:diagnostic-result-get', diagnosticComplete: 'assessment:diagnostic-complete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

@@ -5,9 +5,14 @@ import {
   nodeIdInputSchema,
   questionIdInputSchema,
   saveAssessmentQuestionInputSchema,
+  saveDiagnosticAnswerInputSchema,
+  startDiagnosticInputSchema,
   type AssessmentQuestionView,
   type CompleteDiagnosticResult,
+  type DiagnosticAttemptSummaryView,
   type DiagnosticAttemptView,
+  type DiagnosticReviewView,
+  type ResumableDiagnosticAttemptView,
 } from '../../shared/contracts';
 import type { AssessmentRepository } from '../repositories/assessmentRepository';
 import type { GraphRepository } from '../repositories/graphRepository';
@@ -50,17 +55,42 @@ export class AssessmentService {
     this.repository.deleteQuestion(parsed.data.questionId);
   }
 
-  startDiagnostic(untrustedGraphId: unknown): DiagnosticAttemptView {
+  listDiagnosticAttempts(untrustedGraphId: unknown): DiagnosticAttemptSummaryView[] {
     const parsed = graphIdInputSchema.safeParse({ graphId: untrustedGraphId });
     if (!parsed.success) throw validationError(parsed);
     if (!this.graphRepository.load(parsed.data.graphId)) throw new Error('要诊断的知识图谱不存在');
-    return this.repository.startDiagnostic(parsed.data.graphId);
+    return this.repository.listDiagnosticAttempts(parsed.data.graphId);
+  }
+
+  startDiagnostic(untrustedInput: unknown): DiagnosticAttemptView {
+    const parsed = startDiagnosticInputSchema.safeParse(untrustedInput);
+    if (!parsed.success) throw validationError(parsed);
+    if (!this.graphRepository.load(parsed.data.graphId)) throw new Error('要诊断的知识图谱不存在');
+    return this.repository.startDiagnostic(parsed.data);
+  }
+
+  resumeDiagnostic(untrustedAttemptId: unknown): ResumableDiagnosticAttemptView {
+    const parsed = attemptIdInputSchema.safeParse({ attemptId: untrustedAttemptId });
+    if (!parsed.success) throw validationError(parsed);
+    return this.repository.resumeDiagnostic(parsed.data.attemptId);
+  }
+
+  saveDiagnosticAnswer(untrustedInput: unknown): void {
+    const parsed = saveDiagnosticAnswerInputSchema.safeParse(untrustedInput);
+    if (!parsed.success) throw validationError(parsed);
+    this.repository.saveDiagnosticAnswer(parsed.data);
   }
 
   cancelDiagnostic(untrustedAttemptId: unknown): void {
     const parsed = attemptIdInputSchema.safeParse({ attemptId: untrustedAttemptId });
     if (!parsed.success) throw validationError(parsed);
     this.repository.cancelDiagnostic(parsed.data.attemptId);
+  }
+
+  getDiagnosticResult(untrustedAttemptId: unknown): DiagnosticReviewView {
+    const parsed = attemptIdInputSchema.safeParse({ attemptId: untrustedAttemptId });
+    if (!parsed.success) throw validationError(parsed);
+    return this.repository.getDiagnosticResult(parsed.data.attemptId);
   }
 
   completeDiagnostic(untrustedInput: unknown): CompleteDiagnosticResult {

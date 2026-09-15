@@ -80,18 +80,22 @@ function answers(attempt: DiagnosticAttemptView, correct: boolean) {
   }));
 }
 
+function startDiagnostic(graphId: string, nodeIds: string[] = [sourceId]): DiagnosticAttemptView {
+  return assessmentService.startDiagnostic({ graphId, nodeIds });
+}
+
 describe('diagnostic assessment', () => {
   it('requires two questions per concept and excludes concepts without coverage', () => {
     const graphId = createGraph();
-    expect(() => assessmentService.startDiagnostic(graphId)).toThrow('至少需要为一个概念准备 2 道诊断题');
+    expect(() => startDiagnostic(graphId)).toThrow('每个所选概念至少需要 2 道诊断题');
 
     addQuestion(sourceId, '题目一');
     addQuestion(targetId, '尚未覆盖的题目');
     expect(graphRepository.load(graphId)?.nodes.map((node) => node.diagnosticQuestionCount)).toEqual([1, 1]);
-    expect(() => assessmentService.startDiagnostic(graphId)).toThrow('至少需要为一个概念准备 2 道诊断题');
+    expect(() => startDiagnostic(graphId)).toThrow('每个所选概念至少需要 2 道诊断题');
 
     addQuestion(sourceId, '题目二');
-    const attempt = assessmentService.startDiagnostic(graphId);
+    const attempt = startDiagnostic(graphId);
     expect(attempt.questions).toHaveLength(2);
     expect(attempt.questions.every((question) => question.nodeId === sourceId)).toBe(true);
     expect(attempt.questions[0].options[0]).not.toHaveProperty('isCorrect');
@@ -105,7 +109,7 @@ describe('diagnostic assessment', () => {
     const graphId = createGraph();
     addQuestion(sourceId, '题目一');
     addQuestion(sourceId, '题目二');
-    const attempt = assessmentService.startDiagnostic(graphId);
+    const attempt = startDiagnostic(graphId);
     const result = assessmentService.completeDiagnostic({
       attemptId: attempt.id,
       answers: answers(attempt, true),
@@ -145,14 +149,44 @@ describe('diagnostic assessment', () => {
     expect(learningService.listEvidence(sourceId)).toHaveLength(2);
   });
 
+  it('limits a diagnostic to selected concepts and exposes recoverable progress without correctness', () => {
+    const graphId = createGraph();
+    addQuestion(sourceId, '基础一');
+    addQuestion(sourceId, '基础二');
+    addQuestion(targetId, '进阶一');
+    addQuestion(targetId, '进阶二');
+
+    const attempt = startDiagnostic(graphId, [targetId]);
+    expect(attempt.questions).toHaveLength(2);
+    expect(attempt.questions.every((question) => question.nodeId === targetId)).toBe(true);
+    assessmentService.saveDiagnosticAnswer({
+      attemptId: attempt.id,
+      attemptQuestionId: attempt.questions[0].attemptQuestionId,
+      selectedOptionId: null,
+    });
+    expect(assessmentService.listDiagnosticAttempts(graphId)[0]).toMatchObject({
+      status: 'IN_PROGRESS',
+      answeredCount: 1,
+      correctCount: null,
+      nodeCount: 1,
+    });
+    expect(assessmentService.resumeDiagnostic(attempt.id).answers).toEqual([{
+      attemptQuestionId: attempt.questions[0].attemptQuestionId,
+      selectedOptionId: null,
+    }]);
+    expect(() => startDiagnostic(graphId, [sourceId])).toThrow('有未完成的诊断');
+    assessmentService.cancelDiagnostic(attempt.id);
+    expect(assessmentService.listDiagnosticAttempts(graphId)[0].status).toBe('CANCELLED');
+  });
+
   it('uses the latest diagnostic to downgrade state and relock downstream concepts', () => {
     const graphId = createGraph();
     addQuestion(sourceId, '题目一');
     addQuestion(sourceId, '题目二');
-    const firstAttempt = assessmentService.startDiagnostic(graphId);
+    const firstAttempt = startDiagnostic(graphId);
     assessmentService.completeDiagnostic({ attemptId: firstAttempt.id, answers: answers(firstAttempt, true) });
 
-    const secondAttempt = assessmentService.startDiagnostic(graphId);
+    const secondAttempt = startDiagnostic(graphId);
     const failed = assessmentService.completeDiagnostic({
       attemptId: secondAttempt.id,
       answers: answers(secondAttempt, false),
@@ -169,7 +203,7 @@ describe('diagnostic assessment', () => {
     const graphId = createGraph();
     const first = addQuestion(sourceId, '原始题目一');
     addQuestion(sourceId, '原始题目二');
-    const attempt = assessmentService.startDiagnostic(graphId);
+    const attempt = startDiagnostic(graphId);
 
     assessmentService.saveQuestion({
       id: first.id,
@@ -207,12 +241,34 @@ describe('diagnostic assessment', () => {
       const graphId = createGraph();
       addQuestion(sourceId, '持久化题目一');
       addQuestion(sourceId, '持久化题目二');
-      const attempt = assessmentService.startDiagnostic(graphId);
-      assessmentService.completeDiagnostic({ attemptId: attempt.id, answers: answers(attempt, true) });
+      const attempt = startDiagnostic(graphId);
+      assessmentService.saveDiagnosticAnswer({
+        attemptId: attempt.id,
+        attemptQuestionId: attempt.questions[0].attemptQuestionId,
+        selectedOptionId: attempt.questions[0].options.find((option) => option.text.endsWith('正确'))?.id ?? null,
+      });
       database.close();
 
       reopened = openDatabase(filePath);
       createServices(reopened);
+      expect(assessmentService.listDiagnosticAttempts(graphId)[0]).toMatchObject({
+        status: 'IN_PROGRESS',
+        answeredCount: 1,
+        questionCount: 2,
+        correctCount: null,
+      });
+      const resumed = assessmentService.resumeDiagnostic(attempt.id);
+      expect(resumed.answers).toEqual([expect.objectContaining({
+        attemptQuestionId: attempt.questions[0].attemptQuestionId,
+      })]);
+      assessmentService.completeDiagnostic({ attemptId: resumed.id, answers: answers(resumed, true) });
+      const history = assessmentService.listDiagnosticAttempts(graphId);
+      expect(history[0]).toMatchObject({ status: 'COMPLETED', answeredCount: 2, correctCount: 2 });
+      expect(assessmentService.getDiagnosticResult(attempt.id)).toMatchObject({
+        attemptId: attempt.id,
+        correctCount: 2,
+        questionCount: 2,
+      });
       expect(graphRepository.load(graphId)?.nodes.find((node) => node.id === sourceId)).toMatchObject({
         status: 'MASTERED',
         diagnosticQuestionCount: 2,

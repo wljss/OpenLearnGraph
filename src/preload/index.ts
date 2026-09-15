@@ -6,7 +6,9 @@ import {
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
   type SaveAssessmentQuestionInput,
+  type SaveDiagnosticAnswerInput,
   type SaveGraphInput,
+  type StartDiagnosticInput,
 } from '../shared/contracts';
 
 const api: OpenLearnGraphApi = {
@@ -24,8 +26,12 @@ const api: OpenLearnGraphApi = {
     listQuestions: (nodeId: string) => ipcRenderer.invoke(IPC_CHANNELS.assessmentQuestionList, nodeId),
     saveQuestion: (input: SaveAssessmentQuestionInput) => ipcRenderer.invoke(IPC_CHANNELS.assessmentQuestionSave, input),
     deleteQuestion: (questionId: string) => ipcRenderer.invoke(IPC_CHANNELS.assessmentQuestionDelete, questionId),
-    startDiagnostic: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticStart, graphId),
+    listDiagnosticAttempts: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticAttemptList, graphId),
+    startDiagnostic: (input: StartDiagnosticInput) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticStart, input),
+    resumeDiagnostic: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticResume, attemptId),
+    saveDiagnosticAnswer: (input: SaveDiagnosticAnswerInput) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticAnswerSave, input),
     cancelDiagnostic: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticCancel, attemptId),
+    getDiagnosticResult: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticResultGet, attemptId),
     completeDiagnostic: (input: CompleteDiagnosticInput) => ipcRenderer.invoke(IPC_CHANNELS.diagnosticComplete, input),
   },
   lifecycle: {

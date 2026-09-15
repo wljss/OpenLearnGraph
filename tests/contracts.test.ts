@@ -4,7 +4,9 @@ import {
   completeDiagnosticInputSchema,
   recordLearningEvidenceInputSchema,
   saveAssessmentQuestionInputSchema,
+  saveDiagnosticAnswerInputSchema,
   saveGraphInputSchema,
+  startDiagnosticInputSchema,
 } from '../src/shared/contracts';
 
 const graphId = '11111111-1111-4111-8111-111111111111';
@@ -105,5 +107,12 @@ describe('diagnostic assessment schemas', () => {
     const answer = { attemptQuestionId, selectedOptionId: null };
     expect(completeDiagnosticInputSchema.safeParse({ attemptId, answers: [answer] }).success).toBe(true);
     expect(completeDiagnosticInputSchema.safeParse({ attemptId, answers: [answer, answer] }).success).toBe(false);
+    expect(saveDiagnosticAnswerInputSchema.safeParse({ attemptId, ...answer }).success).toBe(true);
+  });
+
+  it('requires an explicit, unique concept scope for targeted diagnostics', () => {
+    expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, secondNodeId] }).success).toBe(true);
+    expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [] }).success).toBe(false);
+    expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, firstNodeId] }).success).toBe(false);
   });
 });

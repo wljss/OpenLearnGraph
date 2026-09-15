@@ -83,7 +83,9 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 
 ### assessment_attempt_questions / assessment_responses
 
-诊断开始时，系统把概念名、题干、解析和带正确性标记的选项序列化为不可变快照；传给 renderer 的题目会移除正确性标记。作答只引用本次快照中的选项，也允许 `selected_option_id = NULL` 表示“我不知道”。提交在单个事务中写入全部响应、每个概念一条 `DIAGNOSTIC_RESULT` Evidence、learner state 投影和尝试完成状态。编辑或删除当前题库不会改写已经开始的诊断。
+诊断开始时，系统把概念名、题干、解析和带正确性标记的选项序列化为不可变快照；传给 renderer 的题目会移除正确性标记。作答只引用本次快照中的选项，也允许 `selected_option_id = NULL` 表示“我不知道”。
+
+M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN_PROGRESS` 尝试可以跨进程重启恢复；有 response 行且 `selected_option_id = NULL` 表示用户明确选择了“我不知道”，没有 response 行才表示尚未作答。草稿的正确性只在 main/SQLite 内部存在，不通过恢复接口暴露。提交会在单个事务中再次按完整答案 upsert 响应、写入每个概念一条 `DIAGNOSTIC_RESULT` Evidence、更新 learner state 并完成尝试。`CANCELLED` 尝试保留草稿用于历史计数，但永远不生成 Evidence。编辑或删除当前题库不会改写已经开始或完成的诊断。
 
 ## 计划中的独立实体（M4+）
 

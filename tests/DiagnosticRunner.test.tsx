@@ -63,6 +63,7 @@ const attempt: DiagnosticAttemptView = {
 function result(): CompleteDiagnosticResult {
   return {
     attemptId: attempt.id,
+    startedAt: attempt.startedAt,
     completedAt: '2026-01-02T00:10:00.000Z',
     correctCount: 1,
     questionCount: 2,
@@ -117,8 +118,12 @@ function installAssessmentApi(overrides: Partial<OpenLearnGraphApi['assessments'
     listQuestions: vi.fn(),
     saveQuestion: vi.fn(),
     deleteQuestion: vi.fn(),
+    listDiagnosticAttempts: vi.fn().mockResolvedValue([]),
     startDiagnostic: vi.fn().mockResolvedValue(attempt),
+    resumeDiagnostic: vi.fn(),
+    saveDiagnosticAnswer: vi.fn().mockResolvedValue(undefined),
     cancelDiagnostic: vi.fn().mockResolvedValue(undefined),
+    getDiagnosticResult: vi.fn(),
     completeDiagnostic: vi.fn().mockResolvedValue(result()),
     ...overrides,
   };
@@ -136,8 +141,18 @@ describe('DiagnosticRunner', () => {
 
     expect(await screen.findByRole('heading', { name: '第一题' })).toBeVisible();
     fireEvent.click(screen.getByRole('radio', { name: /答案 A/ }));
+    await waitFor(() => expect(api.saveDiagnosticAnswer).toHaveBeenCalledWith({
+      attemptId: attempt.id,
+      attemptQuestionId: attempt.questions[0].attemptQuestionId,
+      selectedOptionId: attempt.questions[0].options[0].id,
+    }));
     fireEvent.click(screen.getByRole('button', { name: '下一题' }));
     fireEvent.click(screen.getByRole('radio', { name: /我不知道/ }));
+    await waitFor(() => expect(api.saveDiagnosticAnswer).toHaveBeenLastCalledWith({
+      attemptId: attempt.id,
+      attemptQuestionId: attempt.questions[1].attemptQuestionId,
+      selectedOptionId: null,
+    }));
     fireEvent.click(screen.getByRole('button', { name: '提交诊断' }));
 
     await waitFor(() => expect(api.completeDiagnostic).toHaveBeenCalledWith({
@@ -152,15 +167,99 @@ describe('DiagnosticRunner', () => {
     expect(onGraphUpdated).toHaveBeenCalledWith(result().graph);
   });
 
-  it('marks an interrupted diagnostic as cancelled before closing', async () => {
+  it('keeps an interrupted diagnostic available when the learner leaves for later', async () => {
     const api = installAssessmentApi();
     const onClose = vi.fn();
     render(<DiagnosticRunner graph={graph} onClose={onClose} onGraphUpdated={vi.fn()} onMessage={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /开始诊断/ }));
     await screen.findByRole('heading', { name: '第一题' });
-    fireEvent.click(screen.getByRole('button', { name: '退出诊断' }));
-    fireEvent.click(screen.getByRole('button', { name: '退出诊断' }));
-    await waitFor(() => expect(api.cancelDiagnostic).toHaveBeenCalledWith(attempt.id));
+    fireEvent.click(screen.getByRole('button', { name: '稍后继续' }));
+    expect(api.cancelDiagnostic).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('requires explicit confirmation before discarding recovered progress', async () => {
+    const inProgress = {
+      id: attempt.id,
+      graphId: graph.id,
+      status: 'IN_PROGRESS' as const,
+      startedAt: attempt.startedAt,
+      completedAt: null,
+      questionCount: 2,
+      answeredCount: 1,
+      correctCount: null,
+      nodeCount: 1,
+    };
+    const api = installAssessmentApi({
+      listDiagnosticAttempts: vi.fn()
+        .mockResolvedValueOnce([inProgress])
+        .mockResolvedValueOnce([{ ...inProgress, status: 'CANCELLED', completedAt: '2026-01-02T00:05:00.000Z' }]),
+    });
+    render(<DiagnosticRunner graph={graph} onClose={vi.fn()} onGraphUpdated={vi.fn()} onMessage={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '放弃' }));
+    expect(screen.getByRole('alertdialog', { name: '放弃这次诊断？' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '放弃诊断' }));
+    await waitFor(() => expect(api.cancelDiagnostic).toHaveBeenCalledWith(attempt.id));
+  });
+
+  it('restores saved answers and continues at the first unanswered question', async () => {
+    const inProgress = {
+      id: attempt.id,
+      graphId: graph.id,
+      status: 'IN_PROGRESS' as const,
+      startedAt: attempt.startedAt,
+      completedAt: null,
+      questionCount: 2,
+      answeredCount: 1,
+      correctCount: null,
+      nodeCount: 1,
+    };
+    const api = installAssessmentApi({
+      listDiagnosticAttempts: vi.fn().mockResolvedValue([inProgress]),
+      resumeDiagnostic: vi.fn().mockResolvedValue({
+        ...attempt,
+        answers: [{
+          attemptQuestionId: attempt.questions[0].attemptQuestionId,
+          selectedOptionId: attempt.questions[0].options[0].id,
+        }],
+      }),
+    });
+    render(<DiagnosticRunner graph={graph} onClose={vi.fn()} onGraphUpdated={vi.fn()} onMessage={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '继续作答' }));
+    expect(await screen.findByRole('heading', { name: '第二题' })).toBeVisible();
+    expect(screen.getByText('1 / 2 已作答')).toBeVisible();
+    expect(api.resumeDiagnostic).toHaveBeenCalledWith(attempt.id);
+  });
+
+  it('opens a historical result and starts a targeted retest for failed concepts', async () => {
+    const completed = {
+      id: attempt.id,
+      graphId: graph.id,
+      status: 'COMPLETED' as const,
+      startedAt: attempt.startedAt,
+      completedAt: result().completedAt,
+      questionCount: 2,
+      answeredCount: 2,
+      correctCount: 1,
+      nodeCount: 1,
+    };
+    const review = result();
+    const api = installAssessmentApi({
+      listDiagnosticAttempts: vi.fn().mockResolvedValue([completed]),
+      getDiagnosticResult: vi.fn().mockResolvedValue(review),
+    });
+    render(<DiagnosticRunner graph={graph} onClose={vi.fn()} onGraphUpdated={vi.fn()} onMessage={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: '历史记录 · 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看结果' }));
+    expect(await screen.findByRole('heading', { name: '答对 1 / 2 题' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '重测未掌握概念 · 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始诊断 · 2 题' }));
+    await waitFor(() => expect(api.startDiagnostic).toHaveBeenCalledWith({
+      graphId: graph.id,
+      nodeIds: [graph.nodes[0].id],
+    }));
   });
 });
