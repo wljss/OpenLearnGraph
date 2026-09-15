@@ -25,6 +25,7 @@ interface NodeDetailsProps {
     rating: SelfAssessmentRating,
     note: string,
   ) => Promise<boolean>;
+  onManageQuestions: (nodeId: string) => void;
 }
 
 const ratings = [1, 2, 3, 4, 5] as const;
@@ -51,6 +52,7 @@ export function NodeDetails({
   onDelete,
   onStartLearning,
   onRecordSelfAssessment,
+  onManageQuestions,
 }: NodeDetailsProps): React.JSX.Element {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const lastFocusedNodeId = useRef<string | null>(null);
@@ -164,10 +166,13 @@ export function NodeDetails({
           <div className="rating-description" aria-live="polite">
             {rating ? `${rating} 分 · ${SELF_ASSESSMENT_RATING_LABELS[rating]}` : '请选择 1–5 分'}
           </div>
-          {rating && node.status === 'MASTERED' && rating < 4 && (
+          {node.latestEvidenceKind === 'DIAGNOSTIC_RESULT' && (
+            <p className="rating-impact objective">自评会保留在证据时间线中，但不会覆盖最近一次客观诊断结果。</p>
+          )}
+          {rating && node.latestEvidenceKind !== 'DIAGNOSTIC_RESULT' && node.status === 'MASTERED' && rating < 4 && (
             <p className="rating-impact warning">这会把当前状态调整为“学习中”，并可能重新锁定后续概念。</p>
           )}
-          {rating && node.status === 'LOCKED' && rating >= 4 && (
+          {rating && node.latestEvidenceKind !== 'DIAGNOSTIC_RESULT' && node.status === 'LOCKED' && rating >= 4 && (
             <p className="rating-impact success">这会记录已有掌握情况，并重新计算后续概念是否可以学习。</p>
           )}
           <label className="assessment-note">
@@ -187,6 +192,24 @@ export function NodeDetails({
         </fieldset>
       </form>
 
+      <section className="detail-section question-bank-card" aria-labelledby="question-bank-heading">
+        <div className="section-heading-row">
+          <span className="field-label" id="question-bank-heading">诊断题库</span>
+          <span>{node.diagnosticQuestionCount} 道</span>
+        </div>
+        <p className="field-hint">
+          {node.diagnosticQuestionCount >= 2
+            ? '题目数量已满足图谱诊断要求。'
+            : `还需 ${2 - node.diagnosticQuestionCount} 道题才能参与图谱诊断。`}
+        </p>
+        <button
+          className="secondary-button manage-questions-button"
+          type="button"
+          disabled={structureDirty || interactionBusy}
+          onClick={() => onManageQuestions(node.id)}
+        >管理诊断题</button>
+      </section>
+
       <section className="detail-section evidence-section" aria-labelledby="evidence-heading">
         <div className="section-heading-row">
           <span className="field-label" id="evidence-heading">学习证据</span>
@@ -198,9 +221,16 @@ export function NodeDetails({
           <ol className="evidence-list">
             {evidence.map((item) => (
               <li key={item.id}>
-                <span className={`evidence-mark ${item.kind === 'SELF_ASSESSMENT' && (item.rating ?? 0) >= 4 ? 'mastered' : ''}`} aria-hidden="true" />
+                <span className={`evidence-mark ${(
+                  (item.kind === 'SELF_ASSESSMENT' && (item.rating ?? 0) >= 4)
+                  || (item.kind === 'DIAGNOSTIC_RESULT' && (item.scoreEarned ?? 0) / (item.scorePossible ?? 1) >= 0.8)
+                ) ? 'mastered' : ''}`} aria-hidden="true" />
                 <div>
-                  <strong>{item.kind === 'STUDY_STARTED' ? '开始学习' : `自评 ${item.rating}/5 · ${SELF_ASSESSMENT_RATING_LABELS[item.rating as SelfAssessmentRating]}`}</strong>
+                  <strong>{item.kind === 'STUDY_STARTED'
+                    ? '开始学习'
+                    : item.kind === 'SELF_ASSESSMENT'
+                      ? `自评 ${item.rating}/5 · ${SELF_ASSESSMENT_RATING_LABELS[item.rating as SelfAssessmentRating]}`
+                      : `客观诊断 · ${item.scoreEarned}/${item.scorePossible} 题正确`}</strong>
                   {item.note && <p>{item.note}</p>}
                   <time dateTime={item.occurredAt}>{formatEvidenceTime(item.occurredAt)}</time>
                 </div>
@@ -221,7 +251,7 @@ export function NodeDetails({
         {dependents.length ? <ul className="prerequisite-list">{dependents.map((item) => <li key={item.id}>{item.name} · {STATUS_LABELS[item.status]}</li>)}</ul> : <p className="field-hint">暂无后续概念</p>}
       </div>
       <button className="danger-button" type="button" disabled={interactionBusy} onClick={() => onDelete(node.id)}>
-        删除概念{connectedEdgeCount ? `及 ${connectedEdgeCount} 条关系` : ''}
+        删除概念{connectedEdgeCount || node.evidenceCount || node.diagnosticQuestionCount ? '及关联数据' : ''}
       </button>
     </aside>
   );

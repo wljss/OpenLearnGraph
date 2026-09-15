@@ -1,6 +1,6 @@
 # OpenLearnGraph
 
-OpenLearnGraph 是一个本地优先、以知识图谱为核心的 Windows 桌面学习应用。当前版本完成 M0（工程与架构基础）、M1（手工知识图谱）和 M2（学习状态与证据）：可构建学习路径、记录学习与自评证据，并根据先修关系投影出可解释的学习状态。
+OpenLearnGraph 是一个本地优先、以知识图谱为核心的 Windows 桌面学习应用。当前版本完成 M0–M3：可构建学习路径、记录学习证据、为概念维护诊断题库，并通过客观诊断更新可解释的学习状态。
 
 ## 环境要求
 
@@ -44,7 +44,7 @@ npm.cmd run package
 npm.cmd run make
 ```
 
-`package` 生成可直接运行的应用目录；`make` 在 `out/make/zip` 下生成 Windows ZIP 分发包。M1 尚不承诺安装程序；带签名的 `OpenLearnGraph-Setup.exe` 属于 M10 发布工作。当前构建未代码签名，Windows SmartScreen 可能提示未知发布者。
+`package` 生成可直接运行的应用目录；`make` 在 `out/make/zip` 下生成 Windows ZIP 分发包。当前尚不承诺安装程序；带签名的 `OpenLearnGraph-Setup.exe` 属于 M10 发布工作。当前构建未代码签名，Windows SmartScreen 可能提示未知发布者。
 
 ## 使用
 
@@ -55,13 +55,16 @@ npm.cmd run make
 5. 点击“保存更改”或按 `Ctrl+S`。重启应用后会从 SQLite 恢复图谱。
 6. 有未保存更改时，切换/新建图谱、删除概念和退出应用都会给出明确提示或确认。
 7. 选中已保存的概念后，可以点击“开始学习”，或用 1–5 分记录一次带备注的自评。
-8. 4–5 分自评会产生“已掌握”状态；未掌握先修概念的节点会保持锁定，掌握后自动解锁。
-9. 每次学习操作都会立即写入本机证据时间线；状态旁会说明其形成原因。
+8. 在右侧“诊断题库”中为概念编写单选题。每个概念至少需要 2 道题，才会进入图谱诊断。
+9. 保存图谱后，点击顶部“图谱诊断”开始作答；可选答案或明确选择“我不知道”，未提交时退出会留下取消记录但不会生成学习证据。
+10. 一个概念的正确率达到 80% 会被客观标记为“已掌握”，否则为“学习中”；结果页可逐题查看正确答案与解析。
+11. 客观诊断结果优先于之后的主观自评；自评仍会保留在证据时间线中。重新诊断才会更新客观结论。
+12. 每次学习与诊断结果都会立即写入本机；状态旁会说明其形成原因，未掌握的先修概念仍会锁定后续节点。
 
 ## 数据位置与安全
 
-数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 明确暴露的图谱、学习证据操作与未保存状态通知可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
+数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 明确暴露的图谱、学习、诊断与未保存状态通知可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
 
-学习状态不写入知识节点。原始证据保存在 `learning_evidence`，独立投影缓存在 `learner_node_states`；图谱保存使用保留节点身份的更新策略，因此编辑节点名称或位置不会清空学习历史。
+学习状态不写入知识节点。原始证据保存在 `learning_evidence`，独立投影缓存在 `learner_node_states`；诊断作答使用不可变题目快照，因此之后编辑或删除题目不会篡改既有结果。图谱保存使用保留节点身份的更新策略，因此编辑节点名称或位置不会清空学习历史。
 
 更多设计说明见 [架构](docs/ARCHITECTURE.md)、[数据模型](docs/DATA_MODEL.md)、[产品规格](docs/PRODUCT_SPEC.md)和[路线图](docs/ROADMAP.md)。

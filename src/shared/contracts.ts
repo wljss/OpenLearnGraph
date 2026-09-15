@@ -5,13 +5,19 @@ export const NODE_STATUSES = ['LOCKED', 'AVAILABLE', 'LEARNING', 'MASTERED', 'RE
 export type NodeStatus = (typeof NODE_STATUSES)[number];
 export const LEARNING_PHASES = ['NOT_STARTED', 'LEARNING', 'MASTERED'] as const;
 export type LearningPhase = (typeof LEARNING_PHASES)[number];
-export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT'] as const;
+export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export type SelfAssessmentRating = 1 | 2 | 3 | 4 | 5;
 
 export const graphIdInputSchema = z.object({ graphId: z.string().uuid() });
 export const nodeIdInputSchema = z.object({
   nodeId: z.string().uuid('概念 ID 无效'),
+});
+export const questionIdInputSchema = z.object({
+  questionId: z.string().uuid('诊断题 ID 无效'),
+});
+export const attemptIdInputSchema = z.object({
+  attemptId: z.string().uuid('诊断记录 ID 无效'),
 });
 export const createGraphInputSchema = z.object({
   name: z.string().trim().min(1, '图谱名称不能为空').max(120),
@@ -41,6 +47,40 @@ export const recordLearningEvidenceInputSchema = z.discriminatedUnion('kind', [
     note: z.string().trim().max(2_000, '学习备注不能超过 2000 字'),
   }),
 ]);
+export const assessmentQuestionOptionInputSchema = z.object({
+  id: z.string().uuid('选项 ID 无效').optional(),
+  text: z.string().trim().min(1, '选项内容不能为空').max(500, '选项内容不能超过 500 字'),
+  isCorrect: z.boolean(),
+});
+export const saveAssessmentQuestionInputSchema = z.object({
+  id: z.string().uuid('诊断题 ID 无效').optional(),
+  nodeId: nodeIdInputSchema.shape.nodeId,
+  prompt: z.string().trim().min(1, '题目内容不能为空').max(2_000, '题目内容不能超过 2000 字'),
+  explanation: z.string().trim().max(5_000, '答案解析不能超过 5000 字'),
+  options: z.array(assessmentQuestionOptionInputSchema)
+    .min(2, '每道题至少需要 2 个选项')
+    .max(6, '每道题最多只能有 6 个选项'),
+}).superRefine((question, context) => {
+  if (question.options.filter((option) => option.isCorrect).length !== 1) {
+    context.addIssue({ code: 'custom', message: '每道题必须且只能有一个正确答案', path: ['options'] });
+  }
+  const normalizedOptions = question.options.map((option) => option.text.toLocaleLowerCase());
+  if (new Set(normalizedOptions).size !== normalizedOptions.length) {
+    context.addIssue({ code: 'custom', message: '同一道题的选项不能重复', path: ['options'] });
+  }
+});
+export const completeDiagnosticInputSchema = z.object({
+  attemptId: z.string().uuid('诊断记录 ID 无效'),
+  answers: z.array(z.object({
+    attemptQuestionId: z.string().uuid('诊断题目 ID 无效'),
+    selectedOptionId: z.string().uuid('答案选项 ID 无效').nullable(),
+  })).min(1, '至少需要提交一道题的答案').max(500),
+}).superRefine((submission, context) => {
+  const questionIds = submission.answers.map((answer) => answer.attemptQuestionId);
+  if (new Set(questionIds).size !== questionIds.length) {
+    context.addIssue({ code: 'custom', message: '同一道题不能重复提交答案', path: ['answers'] });
+  }
+});
 export const saveGraphInputSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1, '图谱名称不能为空').max(120),
@@ -71,12 +111,18 @@ export const saveGraphInputSchema = z.object({
 export type CreateGraphInput = z.infer<typeof createGraphInputSchema>;
 export type SaveGraphInput = z.infer<typeof saveGraphInputSchema>;
 export type RecordLearningEvidenceInput = z.infer<typeof recordLearningEvidenceInputSchema>;
+export type SaveAssessmentQuestionInput = z.infer<typeof saveAssessmentQuestionInputSchema>;
+export type CompleteDiagnosticInput = z.infer<typeof completeDiagnosticInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
   position: { x: number; y: number }; status: NodeStatus;
   learningPhase: LearningPhase; statusReason: string;
   evidenceCount: number; lastEvidenceAt: string | null;
+  latestEvidenceKind: EvidenceKind | null;
+  latestEvidenceScoreEarned: number | null;
+  latestEvidenceScorePossible: number | null;
+  diagnosticQuestionCount: number;
 }
 export interface KnowledgeEdgeView {
   id: string; graphId: string; sourceNodeId: string; targetNodeId: string;
@@ -92,10 +138,71 @@ export interface LearningEvidenceView {
   rating: SelfAssessmentRating | null;
   note: string;
   occurredAt: string;
+  scoreEarned: number | null;
+  scorePossible: number | null;
+  assessmentAttemptId: string | null;
 }
 export interface RecordLearningEvidenceResult {
   graph: KnowledgeGraphDocument;
   evidence: LearningEvidenceView;
+}
+export interface AssessmentQuestionOptionView {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+export interface AssessmentQuestionView {
+  id: string;
+  nodeId: string;
+  prompt: string;
+  explanation: string;
+  options: AssessmentQuestionOptionView[];
+  createdAt: string;
+  updatedAt: string;
+}
+export interface DiagnosticQuestionOptionView {
+  id: string;
+  text: string;
+}
+export interface DiagnosticQuestionView {
+  attemptQuestionId: string;
+  nodeId: string;
+  nodeName: string;
+  prompt: string;
+  options: DiagnosticQuestionOptionView[];
+}
+export interface DiagnosticAttemptView {
+  id: string;
+  graphId: string;
+  startedAt: string;
+  questions: DiagnosticQuestionView[];
+}
+export interface DiagnosticQuestionResult {
+  attemptQuestionId: string;
+  nodeId: string;
+  nodeName: string;
+  prompt: string;
+  selectedOptionText: string | null;
+  correctOptionText: string;
+  explanation: string;
+  isCorrect: boolean;
+}
+export interface DiagnosticNodeResult {
+  nodeId: string;
+  nodeName: string;
+  correctCount: number;
+  questionCount: number;
+  passed: boolean;
+}
+export interface CompleteDiagnosticResult {
+  attemptId: string;
+  completedAt: string;
+  correctCount: number;
+  questionCount: number;
+  nodeResults: DiagnosticNodeResult[];
+  questionResults: DiagnosticQuestionResult[];
+  evidence: LearningEvidenceView[];
+  graph: KnowledgeGraphDocument;
 }
 export interface OpenLearnGraphApi {
   graphs: {
@@ -108,6 +215,14 @@ export interface OpenLearnGraphApi {
     listEvidence(nodeId: string): Promise<LearningEvidenceView[]>;
     recordEvidence(input: RecordLearningEvidenceInput): Promise<RecordLearningEvidenceResult>;
   };
+  assessments: {
+    listQuestions(nodeId: string): Promise<AssessmentQuestionView[]>;
+    saveQuestion(input: SaveAssessmentQuestionInput): Promise<AssessmentQuestionView>;
+    deleteQuestion(questionId: string): Promise<void>;
+    startDiagnostic(graphId: string): Promise<DiagnosticAttemptView>;
+    cancelDiagnostic(attemptId: string): Promise<void>;
+    completeDiagnostic(input: CompleteDiagnosticInput): Promise<CompleteDiagnosticResult>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -115,5 +230,8 @@ export interface OpenLearnGraphApi {
 export const IPC_CHANNELS = {
   graphList: 'graph:list', graphCreate: 'graph:create', graphLoad: 'graph:load', graphSave: 'graph:save',
   learningEvidenceList: 'learning:evidence-list', learningEvidenceRecord: 'learning:evidence-record',
+  assessmentQuestionList: 'assessment:question-list', assessmentQuestionSave: 'assessment:question-save',
+  assessmentQuestionDelete: 'assessment:question-delete', diagnosticStart: 'assessment:diagnostic-start',
+  diagnosticCancel: 'assessment:diagnostic-cancel', diagnosticComplete: 'assessment:diagnostic-complete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

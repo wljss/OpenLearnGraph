@@ -19,6 +19,10 @@ const firstGraph: KnowledgeGraphDocument = {
     statusReason: '没有未完成的先修概念，可以开始学习。',
     evidenceCount: 0,
     lastEvidenceAt: null,
+    latestEvidenceKind: null,
+    latestEvidenceScoreEarned: null,
+    latestEvidenceScorePossible: null,
+    diagnosticQuestionCount: 0,
   }],
   edges: [],
 };
@@ -49,6 +53,10 @@ function savedDocument(input: SaveGraphInput): KnowledgeGraphDocument {
       statusReason: '没有未完成的先修概念，可以开始学习。',
       evidenceCount: 0,
       lastEvidenceAt: null,
+      latestEvidenceKind: null,
+      latestEvidenceScoreEarned: null,
+      latestEvidenceScorePossible: null,
+      diagnosticQuestionCount: 0,
     })),
     edges: input.edges.map((edge) => ({ ...edge, graphId: input.id })),
   };
@@ -66,6 +74,14 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
     learning: {
       listEvidence: vi.fn().mockResolvedValue([]),
       recordEvidence: vi.fn(),
+    },
+    assessments: {
+      listQuestions: vi.fn().mockResolvedValue([]),
+      saveQuestion: vi.fn(),
+      deleteQuestion: vi.fn(),
+      startDiagnostic: vi.fn(),
+      cancelDiagnostic: vi.fn(),
+      completeDiagnostic: vi.fn(),
     },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
@@ -168,7 +184,7 @@ describe('renderer user flows', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '删除概念' }));
 
     await waitFor(() => expect(screen.queryByText('线性代数')).not.toBeInTheDocument());
-    expect(screen.getByText('概念及其相连关系已移除。保存后生效。')).toBeVisible();
+    expect(screen.getByText('概念及其关联数据已标记删除。保存后永久生效。')).toBeVisible();
   });
 
   it('starts learning and immediately explains the persisted evidence', async () => {
@@ -179,6 +195,9 @@ describe('renderer user flows', () => {
       rating: null,
       note: '',
       occurredAt: '2026-01-02T08:00:00.000Z',
+      scoreEarned: null,
+      scorePossible: null,
+      assessmentAttemptId: null,
     };
     const learningGraph: KnowledgeGraphDocument = {
       ...firstGraph,
@@ -220,6 +239,9 @@ describe('renderer user flows', () => {
       rating: 4 as const,
       note: '可以独立完成推导',
       occurredAt: '2026-01-02T09:00:00.000Z',
+      scoreEarned: null,
+      scorePossible: null,
+      assessmentAttemptId: null,
     };
     const masteredGraph: KnowledgeGraphDocument = {
       ...firstGraph,

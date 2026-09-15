@@ -2,11 +2,14 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
+import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
+import { AssessmentRepository } from './repositories/assessmentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
+import { AssessmentService } from './services/assessmentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
 
@@ -59,8 +62,14 @@ function createWindow(): void {
 void app.whenReady().then(() => {
   database = openDatabase(path.join(app.getPath('userData'), 'openlearngraph.sqlite3'));
   const graphRepository = new GraphRepository(database);
+  const learningRepository = new LearningRepository(database);
   registerGraphIpc(new GraphService(graphRepository));
-  registerLearningIpc(new LearningService(new LearningRepository(database), graphRepository));
+  registerLearningIpc(new LearningService(learningRepository, graphRepository));
+  registerAssessmentIpc(new AssessmentService(
+    new AssessmentRepository(database),
+    graphRepository,
+    learningRepository,
+  ));
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {

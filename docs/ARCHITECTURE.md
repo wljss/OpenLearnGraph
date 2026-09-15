@@ -5,13 +5,13 @@
 ```text
 React renderer
   → window.openLearnGraph（preload 中的窄类型 API）
-  → 明确命名的 graph / learning / lifecycle IPC
-  → GraphService / LearningService（Zod 边界验证）
-  → GraphRepository / LearningRepository
+  → 明确命名的 graph / learning / assessment / lifecycle IPC
+  → GraphService / LearningService / AssessmentService（Zod 边界验证）
+  → GraphRepository / LearningRepository / AssessmentRepository
   → SQLite（Electron userData）
 ```
 
-主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
+主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、诊断与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
 
 ## SQLite 决策（ADR-001）
 
@@ -27,7 +27,11 @@ React renderer
 
 知识节点只持久化知识结构。M2 将原始学习事件追加到 `learning_evidence`，并在同一事务中更新独立的 `learner_node_states` 投影缓存。读取图谱时，应用结合学习阶段和先修关系确定节点状态：已掌握优先；否则未完成先修会锁定节点；其余节点根据证据显示为学习中或可学习。每个状态都返回可读原因。
 
-当前 `MASTERED` 仅由最近一次 4–5 分自评证据产生，并在界面明确标注为自评结论。后续 Assessment 产生的客观 Evidence 会扩展 learner model，但仍不把掌握度写入 `knowledge_nodes`。
+没有客观诊断时，`MASTERED` 可由最近一次 4–5 分自评证据产生，并在界面明确标注为自评结论。M3 起，诊断为每个参与概念产生一条带答对数和题目数的 `DIAGNOSTIC_RESULT`；达到 80% 投影为 `MASTERED`，否则投影为 `LEARNING`。最近一次客观诊断优先于之后的自评，重新诊断才会替换客观结论。掌握度始终不写入 `knowledge_nodes`。
+
+## 诊断一致性（ADR-005）
+
+诊断开始时在单个事务中创建 attempt，并复制题目、概念名、解析和选项为快照。renderer 只收到没有正确性标记的选项；评分在 main repository 内依据快照完成。提交在另一个事务中原子写入全部响应、客观 Evidence、learner state 和完成状态。这样题库在诊断期间被修改或删除也不会改变本次评分依据，重复提交和跨题选项会被拒绝。
 
 ## Windows 分发（ADR-004）
 

@@ -43,12 +43,14 @@
 |---|---|---|
 | id | TEXT | UUID，主键 |
 | node_id | TEXT | 概念外键，概念删除时级联 |
-| kind | TEXT | `STUDY_STARTED` 或 `SELF_ASSESSMENT` |
+| kind | TEXT | `STUDY_STARTED`、`SELF_ASSESSMENT` 或 `DIAGNOSTIC_RESULT` |
 | rating | INTEGER / NULL | 自评为 1–5；开始学习时为空 |
+| score_earned / score_possible | INTEGER / NULL | 客观诊断中该概念的答对数与题目数 |
+| assessment_attempt_id | TEXT / NULL | 客观诊断对应的作答尝试外键 |
 | note | TEXT | 用户学习备注，最长 2000 字 |
 | occurred_at | TEXT | ISO-8601 证据时间 |
 
-Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新可重建的状态投影。
+Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新可重建的状态投影。产生客观诊断后，后续自评仍被记录，但不会替代 learner state 中最近一次客观结论。
 
 ### learner_node_states
 
@@ -61,11 +63,30 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 | updated_at | TEXT | 最近状态更新时间 |
 | latest_evidence_id | TEXT / NULL | 最近证据外键 |
 
-此表是 Evidence 的确定性投影缓存，不是独立事实来源。1–3 分自评投影为 `LEARNING`，4–5 分投影为 `MASTERED`；未掌握的先修概念会令非 `MASTERED` 节点显示为 `LOCKED`。
+此表是 Evidence 的确定性投影缓存，不是独立事实来源。没有客观诊断时，1–3 分自评投影为 `LEARNING`，4–5 分投影为 `MASTERED`；最近一次客观诊断按 80% 阈值投影为 `LEARNING` 或 `MASTERED`。未掌握的先修概念会令非 `MASTERED` 节点显示为 `LOCKED`。
 
-## 计划中的独立实体（M3+）
+## M3 诊断实体
 
-- `assessments` / `assessment_attempts`
+### assessment_questions / assessment_options
+
+题目属于知识节点，保存题干、可选解析及 2–6 个有序选项。数据库存储选项的 `is_correct`，服务边界要求每题必须且只能有一个正确答案，且选项文字不能重复。题目删除会级联删除当前选项。
+
+### assessment_attempts
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id | TEXT | UUID，主键 |
+| graph_id | TEXT | 图谱外键 |
+| kind | TEXT | 当前仅 `DIAGNOSTIC` |
+| status | TEXT | `IN_PROGRESS / COMPLETED / CANCELLED` |
+| started_at / completed_at | TEXT / NULL | 作答开始和结束时间 |
+
+### assessment_attempt_questions / assessment_responses
+
+诊断开始时，系统把概念名、题干、解析和带正确性标记的选项序列化为不可变快照；传给 renderer 的题目会移除正确性标记。作答只引用本次快照中的选项，也允许 `selected_option_id = NULL` 表示“我不知道”。提交在单个事务中写入全部响应、每个概念一条 `DIAGNOSTIC_RESULT` Evidence、learner state 投影和尝试完成状态。编辑或删除当前题库不会改写已经开始的诊断。
+
+## 计划中的独立实体（M4+）
+
 - `learning_sessions`
 - `tutor_decisions(action, target_node_id, strategy, reason, ...)`
 - `source_documents` / `source_chunks` / 节点来源关联

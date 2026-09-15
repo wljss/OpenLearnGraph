@@ -20,6 +20,10 @@ const graph: KnowledgeGraphDocument = {
     statusReason: '没有未完成的先修概念，可以开始学习。',
     evidenceCount: 0,
     lastEvidenceAt: null,
+    latestEvidenceKind: null,
+    latestEvidenceScoreEarned: null,
+    latestEvidenceScorePossible: null,
+    diagnosticQuestionCount: 0,
   }],
   edges: [],
 };

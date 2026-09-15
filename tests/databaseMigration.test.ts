@@ -28,10 +28,90 @@ describe('database migrations', () => {
       const upgraded = openDatabase(filePath);
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
-      expect(version.user_version).toBe(2);
+      expect(version.user_version).toBe(3);
       expect(restored?.nodes[0]).toMatchObject({ name: '旧版概念', status: 'AVAILABLE', evidenceCount: 0 });
       upgraded.close();
     } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('upgrades an M2 database while preserving existing learning evidence', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'openlearngraph-migration-m2-'));
+    const filePath = join(directory, 'graph.sqlite3');
+    const graphId = '44444444-4444-4444-8444-444444444444';
+    const nodeId = '55555555-5555-4555-8555-555555555555';
+    const evidenceId = '66666666-6666-4666-8666-666666666666';
+    const occurredAt = '2026-01-02T00:00:00.000Z';
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
+    try {
+      const oldDatabase = openDatabase(filePath);
+      oldDatabase.prepare(
+        'INSERT INTO knowledge_graphs (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+      ).run(graphId, 'M2 图谱', occurredAt, occurredAt);
+      oldDatabase.prepare(
+        `INSERT INTO knowledge_nodes
+         (id, graph_id, name, description, position_x, position_y, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(nodeId, graphId, 'M2 概念', '', 10, 20, occurredAt, occurredAt);
+      oldDatabase.exec(`
+        DROP TABLE learner_node_states;
+        DROP TABLE learning_evidence;
+        DROP TABLE assessment_responses;
+        DROP TABLE assessment_attempt_questions;
+        DROP TABLE assessment_attempts;
+        DROP TABLE assessment_options;
+        DROP TABLE assessment_questions;
+        CREATE TABLE learning_evidence (
+          id TEXT PRIMARY KEY,
+          node_id TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('STUDY_STARTED', 'SELF_ASSESSMENT')),
+          rating INTEGER,
+          note TEXT NOT NULL DEFAULT '',
+          occurred_at TEXT NOT NULL,
+          CHECK ((kind = 'STUDY_STARTED' AND rating IS NULL) OR (kind = 'SELF_ASSESSMENT' AND rating BETWEEN 1 AND 5))
+        ) STRICT;
+        CREATE INDEX idx_learning_evidence_node_time ON learning_evidence(node_id, occurred_at DESC);
+        CREATE TABLE learner_node_states (
+          node_id TEXT PRIMARY KEY REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+          phase TEXT NOT NULL CHECK (phase IN ('NOT_STARTED', 'LEARNING', 'MASTERED')),
+          started_at TEXT,
+          mastered_at TEXT,
+          updated_at TEXT NOT NULL,
+          latest_evidence_id TEXT REFERENCES learning_evidence(id) ON DELETE SET NULL
+        ) STRICT;
+        PRAGMA user_version = 2;
+      `);
+      oldDatabase.prepare(
+        `INSERT INTO learning_evidence (id, node_id, kind, rating, note, occurred_at)
+         VALUES (?, ?, 'SELF_ASSESSMENT', 5, ?, ?)`,
+      ).run(evidenceId, nodeId, '原有学习记录', occurredAt);
+      oldDatabase.prepare(
+        `INSERT INTO learner_node_states
+         (node_id, phase, started_at, mastered_at, updated_at, latest_evidence_id)
+         VALUES (?, 'MASTERED', ?, ?, ?, ?)`,
+      ).run(nodeId, occurredAt, occurredAt, occurredAt, evidenceId);
+      oldDatabase.close();
+
+      upgraded = openDatabase(filePath);
+      const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
+      const restored = new GraphRepository(upgraded).load(graphId);
+      const evidence = upgraded.prepare(
+        `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id
+         FROM learning_evidence WHERE id = ?`,
+      ).get(evidenceId);
+      expect(version.user_version).toBe(3);
+      expect(restored?.nodes[0]).toMatchObject({ status: 'MASTERED', evidenceCount: 1, diagnosticQuestionCount: 0 });
+      expect(evidence).toMatchObject({
+        kind: 'SELF_ASSESSMENT',
+        rating: 5,
+        note: '原有学习记录',
+        score_earned: null,
+        score_possible: null,
+        assessment_attempt_id: null,
+      });
+    } finally {
+      upgraded?.close();
       rmSync(directory, { recursive: true, force: true });
     }
   });

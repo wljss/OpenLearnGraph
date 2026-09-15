@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { recordLearningEvidenceInputSchema, saveGraphInputSchema } from '../src/shared/contracts';
+import {
+  completeDiagnosticInputSchema,
+  recordLearningEvidenceInputSchema,
+  saveAssessmentQuestionInputSchema,
+  saveGraphInputSchema,
+} from '../src/shared/contracts';
 
 const graphId = '11111111-1111-4111-8111-111111111111';
 const firstNodeId = '22222222-2222-4222-8222-222222222222';
@@ -58,5 +63,47 @@ describe('recordLearningEvidenceInputSchema', () => {
     expect(recordLearningEvidenceInputSchema.safeParse({
       nodeId: firstNodeId, kind: 'SELF_ASSESSMENT', rating: 3, note: 'x'.repeat(2_001),
     }).success).toBe(false);
+  });
+});
+
+describe('diagnostic assessment schemas', () => {
+  const question = {
+    nodeId: firstNodeId,
+    prompt: '向量点积的结果是什么？',
+    explanation: '点积把两个等长向量映射为一个标量。',
+    options: [
+      { text: '标量', isCorrect: true },
+      { text: '向量', isCorrect: false },
+    ],
+  };
+
+  it('accepts a single-choice question with exactly one correct option', () => {
+    expect(saveAssessmentQuestionInputSchema.safeParse(question).success).toBe(true);
+  });
+
+  it('rejects missing, multiple and duplicate answers', () => {
+    expect(saveAssessmentQuestionInputSchema.safeParse({
+      ...question,
+      options: question.options.map((option) => ({ ...option, isCorrect: false })),
+    }).success).toBe(false);
+    expect(saveAssessmentQuestionInputSchema.safeParse({
+      ...question,
+      options: question.options.map((option) => ({ ...option, isCorrect: true })),
+    }).success).toBe(false);
+    expect(saveAssessmentQuestionInputSchema.safeParse({
+      ...question,
+      options: [
+        { text: '同一答案', isCorrect: true },
+        { text: ' 同一答案 ', isCorrect: false },
+      ],
+    }).success).toBe(false);
+  });
+
+  it('allows an explicit unknown answer and rejects duplicate question submissions', () => {
+    const attemptId = '77777777-7777-4777-8777-777777777777';
+    const attemptQuestionId = '88888888-8888-4888-8888-888888888888';
+    const answer = { attemptQuestionId, selectedOptionId: null };
+    expect(completeDiagnosticInputSchema.safeParse({ attemptId, answers: [answer] }).success).toBe(true);
+    expect(completeDiagnosticInputSchema.safeParse({ attemptId, answers: [answer, answer] }).success).toBe(false);
   });
 });

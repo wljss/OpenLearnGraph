@@ -10,6 +10,9 @@ import type {
 } from '../shared/contracts';
 import { projectGraphLearning } from '../shared/learningProjection';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { errorMessage } from './errorMessage';
+import { DiagnosticRunner } from './features/assessment/DiagnosticRunner';
+import { QuestionManager } from './features/assessment/QuestionManager';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
 
@@ -26,15 +29,6 @@ interface Confirmation {
   confirmLabel: string;
   destructive?: boolean;
   action: () => void | Promise<void>;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-      .replace(/^Error invoking remote method '[^']+': /, '')
-      .replace(/^Error: /, '');
-  }
-  return '发生了未知错误';
 }
 
 function nextConceptName(nodes: KnowledgeNodeView[]): string {
@@ -84,7 +78,10 @@ export function App(): React.JSX.Element {
     items: LearningEvidenceView[];
   } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const interactionBusy = busy || learningBusy;
+  const [questionManagerNodeId, setQuestionManagerNodeId] = useState<string | null>(null);
+  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
+  const overlayOpen = Boolean(questionManagerNodeId || diagnosticOpen);
+  const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
     setNotice({ text, tone });
@@ -133,6 +130,10 @@ export function App(): React.JSX.Element {
   const selectedNode = useMemo(
     () => graph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [graph, selectedNodeId],
+  );
+  const questionManagerNode = useMemo(
+    () => graph?.nodes.find((node) => node.id === questionManagerNodeId) ?? null,
+    [graph, questionManagerNodeId],
   );
   const selectedEvidence = evidenceState && evidenceState.nodeId === selectedNode?.id ? evidenceState.items : [];
   const evidenceLoading = Boolean(
@@ -229,6 +230,10 @@ export function App(): React.JSX.Element {
       statusReason: '没有未完成的先修概念，可以开始学习。',
       evidenceCount: 0,
       lastEvidenceAt: null,
+      latestEvidenceKind: null,
+      latestEvidenceScoreEarned: null,
+      latestEvidenceScorePossible: null,
+      diagnosticQuestionCount: 0,
     };
     replaceGraph({ ...graph, nodes: [...graph.nodes, node] });
     setSelectedNodeId(node.id);
@@ -264,8 +269,11 @@ export function App(): React.JSX.Element {
             : []),
         ],
       }));
+      const resultingNode = result.graph.nodes.find((node) => node.id === input.nodeId);
       if (input.kind === 'STUDY_STARTED') {
         showNotice('已开始学习，并记录到本机证据时间线。', 'success');
+      } else if (resultingNode?.latestEvidenceKind === 'DIAGNOSTIC_RESULT') {
+        showNotice('自评已记录；已有客观诊断结果继续决定当前状态，如需更新请重新诊断。', 'success');
       } else if (input.rating >= 4) {
         showNotice('自评已记录：概念现为“已掌握”，相关后续概念已重新计算。', 'success');
       } else {
@@ -284,6 +292,21 @@ export function App(): React.JSX.Element {
     recordLearningEvidence({ nodeId, kind: 'STUDY_STARTED' })
   ), [recordLearningEvidence]);
 
+  const updateQuestionCount = useCallback((nodeId: string, count: number): void => {
+    setGraph((current) => current ? {
+      ...current,
+      nodes: current.nodes.map((node) => node.id === nodeId
+        ? { ...node, diagnosticQuestionCount: count }
+        : node),
+    } : current);
+  }, []);
+
+  const acceptDiagnosticGraph = useCallback((updatedGraph: KnowledgeGraphDocument): void => {
+    setGraph(updatedGraph);
+    setDirty(false);
+    setEvidenceState(null);
+  }, []);
+
   const recordSelfAssessment = useCallback((
     nodeId: string,
     rating: SelfAssessmentRating,
@@ -299,11 +322,16 @@ export function App(): React.JSX.Element {
     const connectedEdgeCount = graph.edges.filter(
       (edge) => edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId,
     ).length;
+    const deletionConsequences = [
+      connectedEdgeCount ? `${connectedEdgeCount} 条相连的先修关系` : null,
+      node.evidenceCount ? `${node.evidenceCount} 条学习证据` : null,
+      node.diagnosticQuestionCount ? `${node.diagnosticQuestionCount} 道诊断题` : null,
+    ].filter((item): item is string => Boolean(item));
     setConfirmation({
       title: `删除“${node.name || '未命名概念'}”？`,
-      description: connectedEdgeCount
-        ? `此操作还会移除与它相连的 ${connectedEdgeCount} 条先修关系。只有点击保存后才会写入本机。`
-        : '此概念将从当前图谱中移除。只有点击保存后才会写入本机。',
+      description: deletionConsequences.length
+        ? `保存后还会永久删除：${deletionConsequences.join('、')}。此操作无法恢复。`
+        : '此概念将在保存后从当前图谱中永久删除，且无法恢复。',
       confirmLabel: '删除概念',
       destructive: true,
       action: () => {
@@ -316,7 +344,7 @@ export function App(): React.JSX.Element {
         });
         setSelectedNodeId(null);
         setNewNodeToFocusId(null);
-        showNotice('概念及其相连关系已移除。保存后生效。');
+        showNotice('概念及其关联数据已标记删除。保存后永久生效。');
       },
     });
   };
@@ -442,6 +470,15 @@ export function App(): React.JSX.Element {
             </span>
           </div>
           <div className="top-actions">
+            <button
+              type="button"
+              className="secondary-button diagnostic-launch"
+              disabled={!graph?.nodes.length || dirty || interactionBusy}
+              title={dirty ? '请先保存图谱结构' : '使用客观答题证据检查掌握情况'}
+              onClick={() => setDiagnosticOpen(true)}
+            >
+              ◇ 图谱诊断
+            </button>
             <button type="button" className="secondary-button" disabled={!graph || interactionBusy} onClick={addNode}>
               ＋ 添加概念
             </button>
@@ -499,6 +536,7 @@ export function App(): React.JSX.Element {
             onDelete={deleteNode}
             onStartLearning={startLearning}
             onRecordSelfAssessment={recordSelfAssessment}
+            onManageQuestions={(nodeId) => setQuestionManagerNodeId(nodeId)}
           />
         </div>
       </section>
@@ -511,6 +549,22 @@ export function App(): React.JSX.Element {
           destructive={confirmation.destructive}
           onCancel={() => setConfirmation(null)}
           onConfirm={confirmAction}
+        />
+      )}
+      {questionManagerNode && (
+        <QuestionManager
+          node={questionManagerNode}
+          onClose={() => setQuestionManagerNodeId(null)}
+          onQuestionCountChange={updateQuestionCount}
+          onMessage={showNotice}
+        />
+      )}
+      {diagnosticOpen && graph && (
+        <DiagnosticRunner
+          graph={graph}
+          onClose={() => setDiagnosticOpen(false)}
+          onGraphUpdated={acceptDiagnosticGraph}
+          onMessage={showNotice}
         />
       )}
     </main>

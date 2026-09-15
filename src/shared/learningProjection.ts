@@ -1,9 +1,12 @@
-import type { KnowledgeEdgeView, KnowledgeGraphDocument, LearningPhase, NodeStatus } from './contracts';
+import type { EvidenceKind, KnowledgeEdgeView, KnowledgeGraphDocument, LearningPhase, NodeStatus } from './contracts';
 
 interface LearningProjectionNode {
   id: string;
   name: string;
   learningPhase: LearningPhase;
+  latestEvidenceKind?: EvidenceKind | null;
+  latestEvidenceScoreEarned?: number | null;
+  latestEvidenceScorePossible?: number | null;
 }
 
 export interface LearningStatusProjection {
@@ -27,10 +30,18 @@ export function projectLearningStatuses(
 
   const result = new Map<string, LearningStatusProjection>();
   for (const node of nodes) {
+    const hasDiagnosticResult = node.latestEvidenceKind === 'DIAGNOSTIC_RESULT'
+      && node.latestEvidenceScoreEarned !== null
+      && node.latestEvidenceScorePossible !== null;
+    const diagnosticSummary = hasDiagnosticResult
+      ? `最近一次诊断答对 ${node.latestEvidenceScoreEarned}/${node.latestEvidenceScorePossible} 题`
+      : null;
     if (node.learningPhase === 'MASTERED') {
       result.set(node.id, {
         status: 'MASTERED',
-        statusReason: '最近一次自评表明你已能独立运用这个概念。',
+        statusReason: diagnosticSummary
+          ? `${diagnosticSummary}，达到 80% 的掌握标准。`
+          : '最近一次自评表明你已能独立运用这个概念。',
       });
       continue;
     }
@@ -40,14 +51,18 @@ export function projectLearningStatuses(
     if (unmet.length) {
       result.set(node.id, {
         status: 'LOCKED',
-        statusReason: `还需掌握：${unmet.map((item) => item.name).join('、')}。`,
+        statusReason: diagnosticSummary
+          ? `${diagnosticSummary}，尚未达到掌握标准；还需掌握：${unmet.map((item) => item.name).join('、')}。`
+          : `还需掌握：${unmet.map((item) => item.name).join('、')}。`,
       });
       continue;
     }
     if (node.learningPhase === 'LEARNING') {
       result.set(node.id, {
         status: 'LEARNING',
-        statusReason: '你已经开始学习；继续记录练习或自评证据。',
+        statusReason: diagnosticSummary
+          ? `${diagnosticSummary}，尚未达到 80% 的掌握标准。`
+          : '你已经开始学习；继续记录练习或自评证据。',
       });
       continue;
     }

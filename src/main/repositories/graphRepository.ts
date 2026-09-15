@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { GraphSummary, KnowledgeEdgeView, KnowledgeGraphDocument, KnowledgeNodeView, LearningPhase, SaveGraphInput } from '../../shared/contracts';
+import type { EvidenceKind, GraphSummary, KnowledgeEdgeView, KnowledgeGraphDocument, KnowledgeNodeView, LearningPhase, SaveGraphInput } from '../../shared/contracts';
 import { projectGraphLearning } from '../../shared/learningProjection';
 
 interface GraphRow { id: string; name: string; created_at: string; updated_at: string }
@@ -11,6 +11,10 @@ interface LearningStateRow {
   phase: LearningPhase;
   evidence_count: number;
   last_evidence_at: string | null;
+  latest_evidence_kind: EvidenceKind | null;
+  latest_score_earned: number | null;
+  latest_score_possible: number | null;
+  diagnostic_question_count: number;
 }
 
 function toSummary(row: GraphRow): GraphSummary {
@@ -50,13 +54,16 @@ export class GraphRepository {
     const learningRows = this.database.prepare(
       `SELECT n.id AS node_id,
               COALESCE(s.phase, 'NOT_STARTED') AS phase,
-              COUNT(e.id) AS evidence_count,
-              MAX(e.occurred_at) AS last_evidence_at
+              (SELECT COUNT(*) FROM learning_evidence e WHERE e.node_id = n.id) AS evidence_count,
+              (SELECT MAX(e.occurred_at) FROM learning_evidence e WHERE e.node_id = n.id) AS last_evidence_at,
+              latest.kind AS latest_evidence_kind,
+              latest.score_earned AS latest_score_earned,
+              latest.score_possible AS latest_score_possible,
+              (SELECT COUNT(*) FROM assessment_questions q WHERE q.node_id = n.id) AS diagnostic_question_count
        FROM knowledge_nodes n
        LEFT JOIN learner_node_states s ON s.node_id = n.id
-       LEFT JOIN learning_evidence e ON e.node_id = n.id
-       WHERE n.graph_id = ?
-       GROUP BY n.id, s.phase`,
+       LEFT JOIN learning_evidence latest ON latest.id = s.latest_evidence_id
+       WHERE n.graph_id = ?`,
     ).all(graphId) as unknown as LearningStateRow[];
     const learningByNodeId = new Map(learningRows.map((row) => [row.node_id, row]));
     const nodes: KnowledgeNodeView[] = nodeRows.map((row) => ({
@@ -67,6 +74,10 @@ export class GraphRepository {
       statusReason: '',
       evidenceCount: Number(learningByNodeId.get(row.id)?.evidence_count ?? 0),
       lastEvidenceAt: learningByNodeId.get(row.id)?.last_evidence_at ?? null,
+      latestEvidenceKind: learningByNodeId.get(row.id)?.latest_evidence_kind ?? null,
+      latestEvidenceScoreEarned: learningByNodeId.get(row.id)?.latest_score_earned ?? null,
+      latestEvidenceScorePossible: learningByNodeId.get(row.id)?.latest_score_possible ?? null,
+      diagnosticQuestionCount: Number(learningByNodeId.get(row.id)?.diagnostic_question_count ?? 0),
     }));
     const edges: KnowledgeEdgeView[] = edgeRows.map((row) => ({
       id: row.id, graphId: row.graph_id, sourceNodeId: row.source_node_id,
