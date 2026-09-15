@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type CreateGraphInput, type OpenLearnGraphApi, type SaveGraphInput } from '../shared/contracts';
+import {
+  IPC_CHANNELS,
+  type CreateGraphInput,
+  type OpenLearnGraphApi,
+  type RecordLearningEvidenceInput,
+  type SaveGraphInput,
+} from '../shared/contracts';
 
 const api: OpenLearnGraphApi = {
   graphs: {
@@ -7,6 +13,10 @@ const api: OpenLearnGraphApi = {
     create: (input: CreateGraphInput) => ipcRenderer.invoke(IPC_CHANNELS.graphCreate, input),
     load: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.graphLoad, graphId),
     save: (input: SaveGraphInput) => ipcRenderer.invoke(IPC_CHANNELS.graphSave, input),
+  },
+  learning: {
+    listEvidence: (nodeId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningEvidenceList, nodeId),
+    recordEvidence: (input: RecordLearningEvidenceInput) => ipcRenderer.invoke(IPC_CHANNELS.learningEvidenceRecord, input),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

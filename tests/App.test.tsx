@@ -15,6 +15,10 @@ const firstGraph: KnowledgeGraphDocument = {
     description: '基础知识',
     position: { x: 120, y: 120 },
     status: 'AVAILABLE',
+    learningPhase: 'NOT_STARTED',
+    statusReason: '没有未完成的先修概念，可以开始学习。',
+    evidenceCount: 0,
+    lastEvidenceAt: null,
   }],
   edges: [],
 };
@@ -37,7 +41,15 @@ function savedDocument(input: SaveGraphInput): KnowledgeGraphDocument {
     name: input.name.trim(),
     createdAt: firstGraph.createdAt,
     updatedAt: '2026-01-02T00:00:00.000Z',
-    nodes: input.nodes.map((node) => ({ ...node, graphId: input.id, status: 'AVAILABLE' })),
+    nodes: input.nodes.map((node) => ({
+      ...node,
+      graphId: input.id,
+      status: 'AVAILABLE',
+      learningPhase: 'NOT_STARTED',
+      statusReason: '没有未完成的先修概念，可以开始学习。',
+      evidenceCount: 0,
+      lastEvidenceAt: null,
+    })),
     edges: input.edges.map((edge) => ({ ...edge, graphId: input.id })),
   };
 }
@@ -50,6 +62,10 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       load: vi.fn(),
       save: vi.fn().mockImplementation(savedDocument),
       ...overrides,
+    },
+    learning: {
+      listEvidence: vi.fn().mockResolvedValue([]),
+      recordEvidence: vi.fn(),
     },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
@@ -99,6 +115,8 @@ describe('renderer user flows', () => {
     const nameInput = screen.getByLabelText('名称');
     expect(nameInput).toHaveValue('新概念 1');
     expect(nameInput).toHaveFocus();
+    expect(screen.getByRole('button', { name: /4 分/ })).toBeDisabled();
+    expect(screen.getByText('请先保存图谱结构，再记录学习状态。')).toBeVisible();
     fireEvent.change(nameInput, { target: { value: '神经网络' } });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
 
@@ -151,5 +169,91 @@ describe('renderer user flows', () => {
 
     await waitFor(() => expect(screen.queryByText('线性代数')).not.toBeInTheDocument());
     expect(screen.getByText('概念及其相连关系已移除。保存后生效。')).toBeVisible();
+  });
+
+  it('starts learning and immediately explains the persisted evidence', async () => {
+    const evidence = {
+      id: '44444444-4444-4444-8444-444444444444',
+      nodeId: firstGraph.nodes[0].id,
+      kind: 'STUDY_STARTED' as const,
+      rating: null,
+      note: '',
+      occurredAt: '2026-01-02T08:00:00.000Z',
+    };
+    const learningGraph: KnowledgeGraphDocument = {
+      ...firstGraph,
+      nodes: [{
+        ...firstGraph.nodes[0],
+        status: 'LEARNING',
+        learningPhase: 'LEARNING',
+        statusReason: '你已经开始学习；继续记录练习或自评证据。',
+        evidenceCount: 1,
+        lastEvidenceAt: evidence.occurredAt,
+      }],
+    };
+    const api = installApi({
+      list: vi.fn().mockResolvedValue([summary(firstGraph)]),
+      load: vi.fn().mockResolvedValue(firstGraph),
+    });
+    vi.mocked(api.learning.recordEvidence).mockResolvedValue({ graph: learningGraph, evidence });
+    vi.mocked(api.learning.listEvidence).mockResolvedValue([evidence]);
+    render(<App />);
+    await screen.findByText('已从本机加载知识图谱。');
+
+    fireEvent.click(screen.getByText('线性代数'));
+    fireEvent.click(screen.getByRole('button', { name: '开始学习' }));
+
+    await waitFor(() => expect(api.learning.recordEvidence).toHaveBeenCalledWith({
+      nodeId: firstGraph.nodes[0].id,
+      kind: 'STUDY_STARTED',
+    }));
+    expect(await screen.findByText('你已经开始学习；继续记录练习或自评证据。')).toBeVisible();
+    expect(await screen.findByText('开始学习', { selector: 'strong' })).toBeVisible();
+    expect(screen.getByText('已开始学习，并记录到本机证据时间线。')).toBeVisible();
+  });
+
+  it('records a self assessment and shows why the concept is mastered', async () => {
+    const evidence = {
+      id: '55555555-5555-4555-8555-555555555555',
+      nodeId: firstGraph.nodes[0].id,
+      kind: 'SELF_ASSESSMENT' as const,
+      rating: 4 as const,
+      note: '可以独立完成推导',
+      occurredAt: '2026-01-02T09:00:00.000Z',
+    };
+    const masteredGraph: KnowledgeGraphDocument = {
+      ...firstGraph,
+      nodes: [{
+        ...firstGraph.nodes[0],
+        status: 'MASTERED',
+        learningPhase: 'MASTERED',
+        statusReason: '最近一次自评表明你已能独立运用这个概念。',
+        evidenceCount: 1,
+        lastEvidenceAt: evidence.occurredAt,
+      }],
+    };
+    const api = installApi({
+      list: vi.fn().mockResolvedValue([summary(firstGraph)]),
+      load: vi.fn().mockResolvedValue(firstGraph),
+    });
+    vi.mocked(api.learning.recordEvidence).mockResolvedValue({ graph: masteredGraph, evidence });
+    vi.mocked(api.learning.listEvidence).mockResolvedValue([evidence]);
+    render(<App />);
+    await screen.findByText('已从本机加载知识图谱。');
+
+    fireEvent.click(screen.getByText('线性代数'));
+    fireEvent.click(screen.getByRole('button', { name: /4 分/ }));
+    fireEvent.change(screen.getByPlaceholderText('例如：能独立推导，但实际应用还不熟练。'), { target: { value: '  可以独立完成推导  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '记录自评' }));
+
+    await waitFor(() => expect(api.learning.recordEvidence).toHaveBeenCalledWith({
+      nodeId: firstGraph.nodes[0].id,
+      kind: 'SELF_ASSESSMENT',
+      rating: 4,
+      note: '可以独立完成推导',
+    }));
+    expect(await screen.findByText('最近一次自评表明你已能独立运用这个概念。')).toBeVisible();
+    expect(await screen.findByText('自评 4/5 · 能独立完成')).toBeVisible();
+    expect(screen.getByText('可以独立完成推导')).toBeVisible();
   });
 });

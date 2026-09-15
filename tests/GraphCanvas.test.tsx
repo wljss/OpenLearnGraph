@@ -16,6 +16,10 @@ const graph: KnowledgeGraphDocument = {
     description: '',
     position: { x: 120, y: 120 },
     status: 'AVAILABLE',
+    learningPhase: 'NOT_STARTED',
+    statusReason: '没有未完成的先修概念，可以开始学习。',
+    evidenceCount: 0,
+    lastEvidenceAt: null,
   }],
   edges: [],
 };
@@ -38,6 +42,7 @@ describe('GraphCanvas', () => {
           onGraphChange={vi.fn()}
           onAddNode={vi.fn()}
           onMessage={vi.fn()}
+          readOnly={false}
         />
       </div>,
     );
@@ -57,6 +62,7 @@ describe('GraphCanvas', () => {
           onGraphChange={vi.fn()}
           onAddNode={onAddNode}
           onMessage={vi.fn()}
+          readOnly={false}
         />
       </div>,
     );

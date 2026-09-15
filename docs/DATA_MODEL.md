@@ -1,6 +1,6 @@
 # 数据模型
 
-## M1 实体
+## M1 知识结构实体
 
 ### knowledge_graphs
 
@@ -33,12 +33,38 @@
 | relationship | TEXT | M1 仅 `PREREQUISITE` |
 | created_at | TEXT | ISO-8601 |
 
-数据库同时约束 source ≠ target，并用复合唯一键阻止同图内重复先修边。Zod 在写入事务前检查重复 ID、重复边、自循环和悬空引用。
+数据库同时约束 source ≠ target，并用复合唯一键阻止同图内重复先修边。Zod 在写入事务前检查重复 ID、重复边、自循环、循环路径和悬空引用。
 
-## 计划中的独立实体（M2+）
+## M2 学习实体
 
-- `learner_node_states(node_id, mastery, confidence, status, last_reviewed_at, ...)`
-- `evidence(id, node_id, kind, payload, occurred_at, source_reference, ...)`
+### learning_evidence
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id | TEXT | UUID，主键 |
+| node_id | TEXT | 概念外键，概念删除时级联 |
+| kind | TEXT | `STUDY_STARTED` 或 `SELF_ASSESSMENT` |
+| rating | INTEGER / NULL | 自评为 1–5；开始学习时为空 |
+| note | TEXT | 用户学习备注，最长 2000 字 |
+| occurred_at | TEXT | ISO-8601 证据时间 |
+
+Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新可重建的状态投影。
+
+### learner_node_states
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| node_id | TEXT | 主键，概念外键 |
+| phase | TEXT | `NOT_STARTED / LEARNING / MASTERED` |
+| started_at | TEXT / NULL | 首次开始学习时间 |
+| mastered_at | TEXT / NULL | 当前掌握阶段开始时间 |
+| updated_at | TEXT | 最近状态更新时间 |
+| latest_evidence_id | TEXT / NULL | 最近证据外键 |
+
+此表是 Evidence 的确定性投影缓存，不是独立事实来源。1–3 分自评投影为 `LEARNING`，4–5 分投影为 `MASTERED`；未掌握的先修概念会令非 `MASTERED` 节点显示为 `LOCKED`。
+
+## 计划中的独立实体（M3+）
+
 - `assessments` / `assessment_attempts`
 - `learning_sessions`
 - `tutor_decisions(action, target_node_id, strategy, reason, ...)`

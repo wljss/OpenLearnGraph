@@ -5,13 +5,13 @@
 ```text
 React renderer
   → window.openLearnGraph（preload 中的窄类型 API）
-  → 4 个明确的 IPC handler
-  → GraphService（Zod 边界验证）
-  → GraphRepository
+  → 明确命名的 graph / learning / lifecycle IPC
+  → GraphService / LearningService（Zod 边界验证）
+  → GraphRepository / LearningRepository
   → SQLite（Electron userData）
 ```
 
-主进程负责窗口、数据库与特权能力；preload 只桥接 `graphs.list/create/load/save`；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
+主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
 
 ## SQLite 决策（ADR-001）
 
@@ -21,11 +21,13 @@ React renderer
 
 ## 持久化策略（ADR-002）
 
-M1 保存整个图谱文档，并在单个 `BEGIN IMMEDIATE` 事务中替换其节点与边。该方式简单、原子且容易验证；规模上限由 IPC schema 限定。需要细粒度历史或超大图谱时再改为增量命令，不提前引入事件溯源。
+图谱仍以完整文档作为保存输入，并在单个 `BEGIN IMMEDIATE` 事务中写入；但 M2 起节点使用保留 ID 的 upsert，只删除用户真正移除的节点，避免普通结构编辑触发学习证据的级联删除。边按当前文档替换，规模上限由 IPC schema 限定。
 
 ## 状态边界（ADR-003）
 
-M1 的节点只持久化知识结构。UI 的 `AVAILABLE` 是新概念的结构性默认展示，不是 mastery，也不写入 `knowledge_nodes`。M2 将新增独立的 `learner_node_states` 与 `evidence` 表，并把状态投影到图谱读取模型。
+知识节点只持久化知识结构。M2 将原始学习事件追加到 `learning_evidence`，并在同一事务中更新独立的 `learner_node_states` 投影缓存。读取图谱时，应用结合学习阶段和先修关系确定节点状态：已掌握优先；否则未完成先修会锁定节点；其余节点根据证据显示为学习中或可学习。每个状态都返回可读原因。
+
+当前 `MASTERED` 仅由最近一次 4–5 分自评证据产生，并在界面明确标注为自评结论。后续 Assessment 产生的客观 Evidence 会扩展 learner model，但仍不把掌握度写入 `knowledge_nodes`。
 
 ## Windows 分发（ADR-004）
 

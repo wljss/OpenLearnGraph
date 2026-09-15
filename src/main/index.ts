@@ -3,9 +3,12 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
+import { registerLearningIpc } from './ipc/registerLearningIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { GraphRepository } from './repositories/graphRepository';
+import { LearningRepository } from './repositories/learningRepository';
 import { GraphService } from './services/graphService';
+import { LearningService } from './services/learningService';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -55,7 +58,9 @@ function createWindow(): void {
 
 void app.whenReady().then(() => {
   database = openDatabase(path.join(app.getPath('userData'), 'openlearngraph.sqlite3'));
-  registerGraphIpc(new GraphService(new GraphRepository(database)));
+  const graphRepository = new GraphRepository(database);
+  registerGraphIpc(new GraphService(graphRepository));
+  registerLearningIpc(new LearningService(new LearningRepository(database), graphRepository));
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {

@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GraphSummary, KnowledgeGraphDocument, KnowledgeNodeView, SaveGraphInput } from '../shared/contracts';
+import type {
+  GraphSummary,
+  KnowledgeGraphDocument,
+  KnowledgeNodeView,
+  LearningEvidenceView,
+  RecordLearningEvidenceInput,
+  SaveGraphInput,
+  SelfAssessmentRating,
+} from '../shared/contracts';
+import { projectGraphLearning } from '../shared/learningProjection';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
@@ -69,7 +78,13 @@ export function App(): React.JSX.Element {
     tone: 'info',
   });
   const [busy, setBusy] = useState(true);
+  const [learningBusy, setLearningBusy] = useState(false);
+  const [evidenceState, setEvidenceState] = useState<{
+    nodeId: string;
+    items: LearningEvidenceView[];
+  } | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const interactionBusy = busy || learningBusy;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
     setNotice({ text, tone });
@@ -119,9 +134,31 @@ export function App(): React.JSX.Element {
     () => graph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [graph, selectedNodeId],
   );
+  const selectedEvidence = evidenceState && evidenceState.nodeId === selectedNode?.id ? evidenceState.items : [];
+  const evidenceLoading = Boolean(
+    selectedNode
+    && selectedNode.evidenceCount > 0
+    && evidenceState?.nodeId !== selectedNode.id,
+  );
+
+  useEffect(() => {
+    const nodeId = selectedNode?.id;
+    if (!nodeId || selectedNode.evidenceCount === 0) return;
+
+    let active = true;
+    void window.openLearnGraph.learning.listEvidence(nodeId).then((items) => {
+      if (active) setEvidenceState({ nodeId, items });
+    }).catch((error: unknown) => {
+      if (active) {
+        setEvidenceState({ nodeId, items: [] });
+        showNotice(`学习记录加载失败：${errorMessage(error)}`, 'error');
+      }
+    });
+    return () => { active = false; };
+  }, [selectedNode?.evidenceCount, selectedNode?.id, showNotice]);
 
   const replaceGraph = useCallback((next: KnowledgeGraphDocument): void => {
-    setGraph(next);
+    setGraph(projectGraphLearning(next));
     setDirty(true);
     showNotice('有尚未保存的更改。按 Ctrl+S 保存。');
   }, [showNotice]);
@@ -165,7 +202,7 @@ export function App(): React.JSX.Element {
   };
 
   const requestLoadGraph = (graphId: string): void => {
-    if (graphId === graph?.id || busy) return;
+    if (graphId === graph?.id || interactionBusy) return;
     if (dirty) {
       setConfirmation({
         title: '切换知识图谱？',
@@ -188,6 +225,10 @@ export function App(): React.JSX.Element {
       description: '',
       position: nextNodePosition(graph.nodes),
       status: 'AVAILABLE',
+      learningPhase: 'NOT_STARTED',
+      statusReason: '没有未完成的先修概念，可以开始学习。',
+      evidenceCount: 0,
+      lastEvidenceAt: null,
     };
     replaceGraph({ ...graph, nodes: [...graph.nodes, node] });
     setSelectedNodeId(node.id);
@@ -202,6 +243,54 @@ export function App(): React.JSX.Element {
       nodes: graph.nodes.map((node) => node.id === updated.id ? updated : node),
     });
   };
+
+  const recordLearningEvidence = useCallback(async (
+    input: RecordLearningEvidenceInput,
+  ): Promise<boolean> => {
+    if (dirty) {
+      showNotice('请先保存图谱结构，再记录学习状态。', 'error');
+      return false;
+    }
+    setLearningBusy(true);
+    try {
+      const result = await window.openLearnGraph.learning.recordEvidence(input);
+      setGraph(result.graph);
+      setEvidenceState((current) => ({
+        nodeId: result.evidence.nodeId,
+        items: [
+          result.evidence,
+          ...(current?.nodeId === result.evidence.nodeId
+            ? current.items.filter((item) => item.id !== result.evidence.id)
+            : []),
+        ],
+      }));
+      if (input.kind === 'STUDY_STARTED') {
+        showNotice('已开始学习，并记录到本机证据时间线。', 'success');
+      } else if (input.rating >= 4) {
+        showNotice('自评已记录：概念现为“已掌握”，相关后续概念已重新计算。', 'success');
+      } else {
+        showNotice('自评已记录：概念现为“学习中”，相关后续概念已重新计算。', 'success');
+      }
+      return true;
+    } catch (error) {
+      showNotice(`学习记录保存失败：${errorMessage(error)}`, 'error');
+      return false;
+    } finally {
+      setLearningBusy(false);
+    }
+  }, [dirty, showNotice]);
+
+  const startLearning = useCallback((nodeId: string): Promise<boolean> => (
+    recordLearningEvidence({ nodeId, kind: 'STUDY_STARTED' })
+  ), [recordLearningEvidence]);
+
+  const recordSelfAssessment = useCallback((
+    nodeId: string,
+    rating: SelfAssessmentRating,
+    note: string,
+  ): Promise<boolean> => (
+    recordLearningEvidence({ nodeId, kind: 'SELF_ASSESSMENT', rating, note })
+  ), [recordLearningEvidence]);
 
   const deleteNode = (nodeId: string): void => {
     if (!graph) return;
@@ -304,7 +393,7 @@ export function App(): React.JSX.Element {
               key={item.id}
               className={item.id === graph?.id ? 'active' : ''}
               type="button"
-              disabled={busy}
+              disabled={interactionBusy}
               aria-current={item.id === graph?.id ? 'page' : undefined}
               onClick={() => requestLoadGraph(item.id)}
             >
@@ -319,10 +408,11 @@ export function App(): React.JSX.Element {
             aria-label="新图谱名称"
             value={newGraphName}
             maxLength={120}
+            disabled={interactionBusy}
             placeholder="例如：机器学习基础"
             onChange={(event) => setNewGraphName(event.target.value)}
           />
-          <button type="submit" disabled={busy || !newGraphName.trim()}>＋ 创建图谱</button>
+          <button type="submit" disabled={interactionBusy || !newGraphName.trim()}>＋ 创建图谱</button>
         </form>
         <button className="import-placeholder" type="button" disabled title="将在 M6 实现">
           ⇧ 导入书籍 <span>M6</span>
@@ -341,21 +431,24 @@ export function App(): React.JSX.Element {
                 aria-invalid={!graph.name.trim()}
                 value={graph.name}
                 maxLength={120}
+                disabled={interactionBusy}
                 onChange={(event) => replaceGraph({ ...graph, name: event.target.value })}
               />
             ) : <h1>知识图谱</h1>}
             <span>
-              {graph ? `${graph.nodes.length} 个概念 · ${graph.edges.length} 条关系${dirty ? ' · 尚未保存' : ''}` : '尚未创建图谱'}
+              {graph
+                ? `${graph.nodes.length} 个概念 · ${graph.edges.length} 条关系 · ${graph.nodes.filter((node) => node.status === 'MASTERED').length} 个已掌握${dirty ? ' · 尚未保存' : ''}`
+                : '尚未创建图谱'}
             </span>
           </div>
           <div className="top-actions">
-            <button type="button" className="secondary-button" disabled={!graph || busy} onClick={addNode}>
+            <button type="button" className="secondary-button" disabled={!graph || interactionBusy} onClick={addNode}>
               ＋ 添加概念
             </button>
             <button
               type="button"
               className={`primary-button ${!dirty ? 'saved-button' : ''}`}
-              disabled={!graph || busy || !dirty}
+              disabled={!graph || interactionBusy || !dirty}
               title="保存知识图谱（Ctrl+S）"
               onClick={() => void saveGraph()}
             >
@@ -382,6 +475,7 @@ export function App(): React.JSX.Element {
               onGraphChange={replaceGraph}
               onAddNode={addNode}
               onMessage={showNotice}
+              readOnly={interactionBusy}
             />
           ) : (
             <section className="empty-canvas">
@@ -391,12 +485,20 @@ export function App(): React.JSX.Element {
             </section>
           )}
           <NodeDetails
+            key={selectedNode?.id ?? 'empty-details'}
             graph={graph}
             node={selectedNode}
+            evidence={selectedEvidence}
+            evidenceLoading={evidenceLoading}
             focusNodeNameId={newNodeToFocusId}
+            structureDirty={dirty}
+            learningBusy={learningBusy}
+            interactionBusy={interactionBusy}
             onAddNode={addNode}
             onUpdate={updateNode}
             onDelete={deleteNode}
+            onStartLearning={startLearning}
+            onRecordSelfAssessment={recordSelfAssessment}
           />
         </div>
       </section>

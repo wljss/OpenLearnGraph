@@ -33,6 +33,32 @@ const MIGRATION_1 = `
   CREATE INDEX IF NOT EXISTS idx_knowledge_edges_graph ON knowledge_edges(graph_id);
 `;
 
+const MIGRATION_2 = `
+  CREATE TABLE IF NOT EXISTS learning_evidence (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('STUDY_STARTED', 'SELF_ASSESSMENT')),
+    rating INTEGER,
+    note TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    CHECK (
+      (kind = 'STUDY_STARTED' AND rating IS NULL)
+      OR (kind = 'SELF_ASSESSMENT' AND rating BETWEEN 1 AND 5)
+    )
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS idx_learning_evidence_node_time
+    ON learning_evidence(node_id, occurred_at DESC);
+
+  CREATE TABLE IF NOT EXISTS learner_node_states (
+    node_id TEXT PRIMARY KEY REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('NOT_STARTED', 'LEARNING', 'MASTERED')),
+    started_at TEXT,
+    mastered_at TEXT,
+    updated_at TEXT NOT NULL,
+    latest_evidence_id TEXT REFERENCES learning_evidence(id) ON DELETE SET NULL
+  ) STRICT;
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -42,6 +68,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_1);
       database.exec('PRAGMA user_version = 1;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 2) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_2);
+      database.exec('PRAGMA user_version = 2;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');
