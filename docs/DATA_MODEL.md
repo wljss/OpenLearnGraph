@@ -43,10 +43,11 @@
 |---|---|---|
 | id | TEXT | UUID，主键 |
 | node_id | TEXT | 概念外键，概念删除时级联 |
-| kind | TEXT | `STUDY_STARTED`、`SELF_ASSESSMENT` 或 `DIAGNOSTIC_RESULT` |
+| kind | TEXT | `STUDY_STARTED`、`SELF_ASSESSMENT`、`DIAGNOSTIC_RESULT` 或 `LEARNING_SESSION_COMPLETED` |
 | rating | INTEGER / NULL | 自评为 1–5；开始学习时为空 |
 | score_earned / score_possible | INTEGER / NULL | 客观诊断中该概念的答对数与题目数 |
 | assessment_attempt_id | TEXT / NULL | 客观诊断对应的作答尝试外键 |
+| learning_session_id | TEXT / NULL | 完成学习会话对应的会话外键 |
 | note | TEXT | 用户学习备注，最长 2000 字 |
 | occurred_at | TEXT | ISO-8601 证据时间 |
 
@@ -107,9 +108,26 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 `tutor_decisions` 是建议与用户响应的审计记录，不是 Evidence。采纳或忽略只修改 `response`；图谱语义状态或活动诊断变化会使旧记录变为 `is_stale = 1`。节点坐标不进入状态指纹，避免仅调整画布布局时制造无意义的新建议。
 
-## 计划中的独立实体（M5+）
+## M5A 学习会话实体
 
-- `learning_sessions`
+### learning_sessions
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id / graph_id | TEXT | UUID 主键 / 图谱外键 |
+| node_id | TEXT / NULL | 目标概念；删除概念后置空 |
+| source_decision_id | TEXT / NULL | 可选的来源建议外键 |
+| action | TEXT | `TEACH / ADVANCE` |
+| status | TEXT | `IN_PROGRESS / COMPLETED / CANCELLED` |
+| node_name_snapshot / description_snapshot | TEXT | 会话开始时的概念内容快照 |
+| prerequisite_snapshot_json | TEXT | 经验证的先修概念与状态快照 |
+| notes / step_index | TEXT / INTEGER | 自动保存的学习笔记与三步进度 |
+| started_at / updated_at / completed_at | TEXT / NULL | 会话生命周期时间 |
+
+每个图谱最多有一个 `IN_PROGRESS` 学习会话，且活动诊断和活动学习会话互斥。完成操作在单个事务中写入 `LEARNING_SESSION_COMPLETED` Evidence、更新允许更新的 learner state 并结束会话。会话完成只表示完成了学习行为，不构成掌握结论；已有诊断状态和 `MASTERED` 状态不会被降级。取消会话不生成 Evidence。
+
+## 计划中的独立实体（M6+）
+
 - `source_documents` / `source_chunks` / 节点来源关联
 
 `mastery` 和用户状态绝不进入 `knowledge_nodes`。Evidence 保留原始结果和出处，learner model 根据证据更新状态，从而允许解释任一掌握度。

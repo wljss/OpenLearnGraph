@@ -19,7 +19,7 @@ interface NodeDetailsProps {
   onAddNode: () => void;
   onUpdate: (node: KnowledgeNodeView) => void;
   onDelete: (nodeId: string) => void;
-  onStartLearning: (nodeId: string) => Promise<boolean>;
+  onStartLearning: (nodeId: string) => void;
   onRecordSelfAssessment: (
     nodeId: string,
     rating: SelfAssessmentRating,
@@ -134,10 +134,13 @@ export function NodeDetails({
             className="primary-button learning-action"
             type="button"
             disabled={structureDirty || interactionBusy}
-            onClick={() => void onStartLearning(node.id)}
+            onClick={() => onStartLearning(node.id)}
           >
-            {learningBusy ? '正在记录…' : '开始学习'}
+            开始学习会话
           </button>
+        )}
+        {node.status === 'AVAILABLE' && !node.description.trim() && !structureDirty && (
+          <p className="learning-guidance">请先补充概念描述；学习会话不会凭空生成内容。</p>
         )}
         {node.status === 'LOCKED' && <p className="learning-guidance">完成先修概念后即可开始；如果你已经掌握，也可以直接记录自评。</p>}
         {node.status === 'MASTERED' && <p className="learning-guidance success">这项掌握结论来自最近一次自评，可继续补充新证据。</p>}
@@ -230,7 +233,9 @@ export function NodeDetails({
                     ? '开始学习'
                     : item.kind === 'SELF_ASSESSMENT'
                       ? `自评 ${item.rating}/5 · ${SELF_ASSESSMENT_RATING_LABELS[item.rating as SelfAssessmentRating]}`
-                      : `客观诊断 · ${item.scoreEarned}/${item.scorePossible} 题正确`}</strong>
+                      : item.kind === 'DIAGNOSTIC_RESULT'
+                        ? `客观诊断 · ${item.scoreEarned}/${item.scorePossible} 题正确`
+                        : '完成学习会话'}</strong>
                   {item.note && <p>{item.note}</p>}
                   <time dateTime={item.occurredAt}>{formatEvidenceTime(item.occurredAt)}</time>
                 </div>

@@ -9,6 +9,7 @@ import { AssessmentRepository } from '../src/main/repositories/assessmentReposit
 import { GraphRepository } from '../src/main/repositories/graphRepository';
 import { LearningRepository } from '../src/main/repositories/learningRepository';
 import { TutorRepository } from '../src/main/repositories/tutorRepository';
+import { SessionRepository } from '../src/main/repositories/sessionRepository';
 import { AssessmentService } from '../src/main/services/assessmentService';
 import { GraphService } from '../src/main/services/graphService';
 import { LearningService } from '../src/main/services/learningService';
@@ -26,10 +27,16 @@ function installServices(targetDatabase: DatabaseSync): void {
   const graphRepository = new GraphRepository(targetDatabase);
   const learningRepository = new LearningRepository(targetDatabase);
   const assessmentRepository = new AssessmentRepository(targetDatabase);
+  const sessionRepository = new SessionRepository(targetDatabase);
   graphService = new GraphService(graphRepository);
   learningService = new LearningService(learningRepository, graphRepository);
   assessmentService = new AssessmentService(assessmentRepository, graphRepository, learningRepository);
-  tutorService = new TutorService(new TutorRepository(targetDatabase), graphRepository, assessmentRepository);
+  tutorService = new TutorService(
+    new TutorRepository(targetDatabase),
+    graphRepository,
+    assessmentRepository,
+    sessionRepository,
+  );
 }
 
 beforeEach(() => {

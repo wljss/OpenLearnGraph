@@ -84,4 +84,18 @@ describe('deterministic tutor planner', () => {
       context: { attemptId },
     });
   });
+
+  it('resumes a persisted learning session before planning a new action', () => {
+    const nodeId = '22222222-2222-4222-8222-222222222222';
+    const sessionId = '44444444-4444-4444-8444-444444444444';
+    expect(planNextLearningAction(
+      graph([node(nodeId, '基础概念')]),
+      null,
+      { sessionId, targetNodeId: nodeId, targetNodeName: '基础概念', action: 'TEACH' },
+    )).toMatchObject({
+      action: 'TEACH',
+      reasonCode: 'RESUME_LEARNING_SESSION',
+      context: { sessionId },
+    });
+  });
 });

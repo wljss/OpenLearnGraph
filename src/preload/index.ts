@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   IPC_CHANNELS,
   type CompleteDiagnosticInput,
+  type CompleteLearningSessionInput,
   type CreateGraphInput,
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
@@ -9,6 +10,8 @@ import {
   type SaveAssessmentQuestionInput,
   type SaveDiagnosticAnswerInput,
   type SaveGraphInput,
+  type SaveLearningSessionDraftInput,
+  type StartLearningSessionInput,
   type StartDiagnosticInput,
 } from '../shared/contracts';
 
@@ -39,6 +42,15 @@ const api: OpenLearnGraphApi = {
     getRecommendation: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.tutorRecommendationGet, graphId),
     listDecisions: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.tutorDecisionList, graphId),
     respondDecision: (input: RespondTutorDecisionInput) => ipcRenderer.invoke(IPC_CHANNELS.tutorDecisionRespond, input),
+  },
+  sessions: {
+    list: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionList, graphId),
+    getActive: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionActiveGet, graphId),
+    get: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionGet, sessionId),
+    start: (input: StartLearningSessionInput) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionStart, input),
+    saveDraft: (input: SaveLearningSessionDraftInput) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionDraftSave, input),
+    complete: (input: CompleteLearningSessionInput) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionComplete, input),
+    cancel: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionCancel, sessionId),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

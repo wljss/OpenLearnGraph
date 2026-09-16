@@ -6,10 +6,15 @@ import {
   type KnowledgeGraphDocument,
   type TutorDecisionView,
 } from '../../shared/contracts';
-import { planNextLearningAction, type ActiveDiagnosticContext } from '../../shared/tutorPlanner';
+import {
+  planNextLearningAction,
+  type ActiveDiagnosticContext,
+  type ActiveLearningSessionContext,
+} from '../../shared/tutorPlanner';
 import type { AssessmentRepository } from '../repositories/assessmentRepository';
 import type { GraphRepository } from '../repositories/graphRepository';
 import type { TutorRepository } from '../repositories/tutorRepository';
+import type { SessionRepository } from '../repositories/sessionRepository';
 
 function validationError(result: { success: false; error: { issues: Array<{ message: string }> } }): Error {
   return new Error(result.error.issues[0]?.message ?? '学习建议数据无效');
@@ -25,6 +30,7 @@ function activeAttemptIds(attempts: DiagnosticAttemptSummaryView[]): string[] {
 export function buildTutorStateFingerprint(
   graph: KnowledgeGraphDocument,
   activeIds: string[],
+  activeSessionIds: string[] = [],
 ): string {
   const state = {
     graphId: graph.id,
@@ -48,6 +54,7 @@ export function buildTutorStateFingerprint(
       `${left.sourceNodeId}:${left.targetNodeId}`.localeCompare(`${right.sourceNodeId}:${right.targetNodeId}`)
     )),
     activeDiagnosticIds: [...activeIds].sort(),
+    activeLearningSessionIds: [...activeSessionIds].sort(),
   };
   return createHash('sha256').update(JSON.stringify(state)).digest('hex');
 }
@@ -57,11 +64,13 @@ export class TutorService {
     private readonly repository: TutorRepository,
     private readonly graphRepository: GraphRepository,
     private readonly assessmentRepository: AssessmentRepository,
+    private readonly sessionRepository: SessionRepository,
   ) {}
 
   private readGraphState(graphId: string): {
     graph: KnowledgeGraphDocument;
     activeDiagnostic: ActiveDiagnosticContext | null;
+    activeLearningSession: ActiveLearningSessionContext | null;
     fingerprint: string;
   } {
     const graph = this.graphRepository.load(graphId);
@@ -79,10 +88,18 @@ export class TutorService {
         targetNodeId: targetQuestion?.nodeId ?? null,
       };
     }
+    const session = this.sessionRepository.findActive(graphId);
+    const activeLearningSession: ActiveLearningSessionContext | null = session ? {
+      sessionId: session.id,
+      targetNodeId: session.nodeId,
+      targetNodeName: session.nodeName,
+      action: session.action,
+    } : null;
     return {
       graph,
       activeDiagnostic,
-      fingerprint: buildTutorStateFingerprint(graph, ids),
+      activeLearningSession,
+      fingerprint: buildTutorStateFingerprint(graph, ids, session ? [session.id] : []),
     };
   }
 
@@ -93,7 +110,7 @@ export class TutorService {
     this.repository.markOtherStatesStale(parsed.data.graphId, state.fingerprint);
     const existing = this.repository.findCurrentByFingerprint(parsed.data.graphId, state.fingerprint);
     if (existing) return existing;
-    const plan = planNextLearningAction(state.graph, state.activeDiagnostic);
+    const plan = planNextLearningAction(state.graph, state.activeDiagnostic, state.activeLearningSession);
     return plan ? this.repository.create(parsed.data.graphId, state.fingerprint, plan) : null;
   }
 

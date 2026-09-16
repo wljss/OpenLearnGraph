@@ -42,10 +42,17 @@ function parseContext(value: string): TutorDecisionContext {
     throw new Error('学习建议中的上下文数据已损坏');
   }
   const attemptId = (parsed as { attemptId?: unknown }).attemptId;
+  const sessionId = (parsed as { sessionId?: unknown }).sessionId;
   if (attemptId !== undefined && typeof attemptId !== 'string') {
     throw new Error('学习建议中的诊断上下文已损坏');
   }
-  return attemptId === undefined ? {} : { attemptId };
+  if (sessionId !== undefined && typeof sessionId !== 'string') {
+    throw new Error('学习建议中的会话上下文已损坏');
+  }
+  return {
+    ...(attemptId === undefined ? {} : { attemptId }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+  };
 }
 
 function toView(row: TutorDecisionRow): TutorDecisionView {

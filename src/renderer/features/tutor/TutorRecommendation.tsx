@@ -6,6 +6,7 @@ interface TutorRecommendationProps {
   graph: KnowledgeGraphDocument;
   structureDirty: boolean;
   disabled: boolean;
+  refreshToken?: number;
   onExecute: (decision: TutorDecisionView) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
@@ -20,9 +21,13 @@ const ACTION_COPY: Record<TutorAction, { label: string; cta: string }> = {
 };
 
 function actionCopy(decision: TutorDecisionView): { label: string; cta: string } {
-  return decision.reasonCode === 'RESUME_DIAGNOSTIC'
-    ? { label: '继续诊断', cta: '继续未完成诊断' }
-    : ACTION_COPY[decision.action];
+  if (decision.reasonCode === 'RESUME_DIAGNOSTIC') {
+    return { label: '继续诊断', cta: '继续未完成诊断' };
+  }
+  if (decision.reasonCode === 'RESUME_LEARNING_SESSION') {
+    return { label: '继续学习', cta: '继续未完成会话' };
+  }
+  return ACTION_COPY[decision.action];
 }
 
 function formatDate(value: string): string {
@@ -45,6 +50,7 @@ export function TutorRecommendation({
   graph,
   structureDirty,
   disabled,
+  refreshToken = 0,
   onExecute,
   onMessage,
 }: TutorRecommendationProps): React.JSX.Element {
@@ -67,6 +73,7 @@ export function TutorRecommendation({
       node.diagnosticQuestionCount,
     ]),
     edges: graph.edges.map((edge) => [edge.sourceNodeId, edge.targetNodeId]),
+    refreshToken,
   });
   const loading = loadedRequestKey !== requestKey && !structureDirty;
 

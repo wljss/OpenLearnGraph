@@ -5,7 +5,7 @@ export const NODE_STATUSES = ['LOCKED', 'AVAILABLE', 'LEARNING', 'MASTERED', 'RE
 export type NodeStatus = (typeof NODE_STATUSES)[number];
 export const LEARNING_PHASES = ['NOT_STARTED', 'LEARNING', 'MASTERED'] as const;
 export type LearningPhase = (typeof LEARNING_PHASES)[number];
-export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT'] as const;
+export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT', 'LEARNING_SESSION_COMPLETED'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export type SelfAssessmentRating = 1 | 2 | 3 | 4 | 5;
 export const TUTOR_ACTIONS = ['TEACH', 'ASSESS', 'PRACTICE', 'REVIEW', 'REMEDIATE', 'ADVANCE'] as const;
@@ -21,6 +21,7 @@ export const TUTOR_REASON_CODES = [
   'START_FOUNDATION',
   'REVIEW_COMPLETE_GRAPH',
   'REVIEW_TO_UNLOCK',
+  'RESUME_LEARNING_SESSION',
 ] as const;
 export type TutorReasonCode = (typeof TUTOR_REASON_CODES)[number];
 
@@ -40,6 +41,24 @@ export const tutorDecisionIdInputSchema = z.object({
 export const respondTutorDecisionInputSchema = z.object({
   decisionId: tutorDecisionIdInputSchema.shape.decisionId,
   response: z.enum(TUTOR_DECISION_RESPONSES),
+});
+export const learningSessionIdInputSchema = z.object({
+  sessionId: z.string().uuid('学习会话 ID 无效'),
+});
+export const startLearningSessionInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  nodeId: nodeIdInputSchema.shape.nodeId,
+  action: z.enum(['TEACH', 'ADVANCE']),
+  sourceDecisionId: tutorDecisionIdInputSchema.shape.decisionId.optional(),
+});
+export const saveLearningSessionDraftInputSchema = z.object({
+  sessionId: learningSessionIdInputSchema.shape.sessionId,
+  notes: z.string().max(5_000, '会话笔记不能超过 5000 字'),
+  stepIndex: z.number().int().min(0).max(2),
+});
+export const completeLearningSessionInputSchema = z.object({
+  sessionId: learningSessionIdInputSchema.shape.sessionId,
+  notes: z.string().trim().min(1, '请先用自己的话写下学习总结').max(5_000, '会话笔记不能超过 5000 字'),
 });
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
@@ -153,6 +172,9 @@ export type StartDiagnosticInput = z.infer<typeof startDiagnosticInputSchema>;
 export type SaveDiagnosticAnswerInput = z.infer<typeof saveDiagnosticAnswerInputSchema>;
 export type CompleteDiagnosticInput = z.infer<typeof completeDiagnosticInputSchema>;
 export type RespondTutorDecisionInput = z.infer<typeof respondTutorDecisionInputSchema>;
+export type StartLearningSessionInput = z.infer<typeof startLearningSessionInputSchema>;
+export type SaveLearningSessionDraftInput = z.infer<typeof saveLearningSessionDraftInputSchema>;
+export type CompleteLearningSessionInput = z.infer<typeof completeLearningSessionInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -181,6 +203,7 @@ export interface LearningEvidenceView {
   scoreEarned: number | null;
   scorePossible: number | null;
   assessmentAttemptId: string | null;
+  learningSessionId: string | null;
 }
 export interface RecordLearningEvidenceResult {
   graph: KnowledgeGraphDocument;
@@ -268,6 +291,35 @@ export interface CompleteDiagnosticResult extends DiagnosticReviewView {
 }
 export interface TutorDecisionContext {
   attemptId?: string;
+  sessionId?: string;
+}
+export type LearningSessionAction = 'TEACH' | 'ADVANCE';
+export type LearningSessionStatus = 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export interface LearningSessionPrerequisiteView {
+  nodeId: string;
+  nodeName: string;
+  status: NodeStatus;
+}
+export interface LearningSessionView {
+  id: string;
+  graphId: string;
+  nodeId: string | null;
+  nodeName: string;
+  description: string;
+  prerequisites: LearningSessionPrerequisiteView[];
+  action: LearningSessionAction;
+  status: LearningSessionStatus;
+  notes: string;
+  stepIndex: number;
+  sourceDecisionId: string | null;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+export interface CompleteLearningSessionResult {
+  session: LearningSessionView;
+  evidence: LearningEvidenceView;
+  graph: KnowledgeGraphDocument;
 }
 export interface TutorDecisionView {
   id: string;
@@ -313,6 +365,15 @@ export interface OpenLearnGraphApi {
     listDecisions(graphId: string): Promise<TutorDecisionView[]>;
     respondDecision(input: RespondTutorDecisionInput): Promise<TutorDecisionView>;
   };
+  sessions: {
+    list(graphId: string): Promise<LearningSessionView[]>;
+    getActive(graphId: string): Promise<LearningSessionView | null>;
+    get(sessionId: string): Promise<LearningSessionView>;
+    start(input: StartLearningSessionInput): Promise<LearningSessionView>;
+    saveDraft(input: SaveLearningSessionDraftInput): Promise<LearningSessionView>;
+    complete(input: CompleteLearningSessionInput): Promise<CompleteLearningSessionResult>;
+    cancel(sessionId: string): Promise<LearningSessionView>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -327,5 +388,9 @@ export const IPC_CHANNELS = {
   diagnosticResultGet: 'assessment:diagnostic-result-get', diagnosticComplete: 'assessment:diagnostic-complete',
   tutorRecommendationGet: 'tutor:recommendation-get', tutorDecisionList: 'tutor:decision-list',
   tutorDecisionRespond: 'tutor:decision-respond',
+  learningSessionList: 'session:list', learningSessionActiveGet: 'session:active-get',
+  learningSessionGet: 'session:get', learningSessionStart: 'session:start',
+  learningSessionDraftSave: 'session:draft-save', learningSessionComplete: 'session:complete',
+  learningSessionCancel: 'session:cancel',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

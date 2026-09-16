@@ -186,6 +186,74 @@ const MIGRATION_4 = `
     ON tutor_decisions(graph_id, state_fingerprint) WHERE is_stale = 0;
 `;
 
+const MIGRATION_5 = `
+  CREATE TABLE IF NOT EXISTS learning_sessions (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES knowledge_graphs(id) ON DELETE CASCADE,
+    node_id TEXT REFERENCES knowledge_nodes(id) ON DELETE SET NULL,
+    source_decision_id TEXT REFERENCES tutor_decisions(id) ON DELETE SET NULL,
+    action TEXT NOT NULL CHECK (action IN ('TEACH', 'ADVANCE')),
+    status TEXT NOT NULL CHECK (status IN ('IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+    node_name_snapshot TEXT NOT NULL CHECK (length(trim(node_name_snapshot)) > 0),
+    description_snapshot TEXT NOT NULL,
+    prerequisites_json TEXT NOT NULL CHECK (json_valid(prerequisites_json)),
+    notes TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= 5000),
+    step_index INTEGER NOT NULL DEFAULT 0 CHECK (step_index BETWEEN 0 AND 2),
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS idx_learning_sessions_graph_time
+    ON learning_sessions(graph_id, started_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_sessions_active_graph
+    ON learning_sessions(graph_id) WHERE status = 'IN_PROGRESS';
+
+  ALTER TABLE learning_evidence RENAME TO learning_evidence_m4;
+  DROP INDEX IF EXISTS idx_learning_evidence_node_time;
+  ALTER TABLE learner_node_states RENAME TO learner_node_states_m4;
+
+  CREATE TABLE learning_evidence (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT', 'LEARNING_SESSION_COMPLETED')),
+    rating INTEGER,
+    score_earned INTEGER,
+    score_possible INTEGER,
+    assessment_attempt_id TEXT REFERENCES assessment_attempts(id) ON DELETE CASCADE,
+    learning_session_id TEXT REFERENCES learning_sessions(id) ON DELETE CASCADE,
+    note TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    CHECK (
+      (kind = 'STUDY_STARTED' AND rating IS NULL AND score_earned IS NULL AND score_possible IS NULL AND assessment_attempt_id IS NULL AND learning_session_id IS NULL)
+      OR (kind = 'SELF_ASSESSMENT' AND rating BETWEEN 1 AND 5 AND score_earned IS NULL AND score_possible IS NULL AND assessment_attempt_id IS NULL AND learning_session_id IS NULL)
+      OR (kind = 'DIAGNOSTIC_RESULT' AND rating IS NULL AND score_earned >= 0 AND score_possible >= 1 AND score_earned <= score_possible AND assessment_attempt_id IS NOT NULL AND learning_session_id IS NULL)
+      OR (kind = 'LEARNING_SESSION_COMPLETED' AND rating IS NULL AND score_earned IS NULL AND score_possible IS NULL AND assessment_attempt_id IS NULL AND learning_session_id IS NOT NULL)
+    )
+  ) STRICT;
+  INSERT INTO learning_evidence
+    (id, node_id, kind, rating, score_earned, score_possible, assessment_attempt_id, learning_session_id, note, occurred_at)
+  SELECT id, node_id, kind, rating, score_earned, score_possible, assessment_attempt_id, NULL, note, occurred_at
+  FROM learning_evidence_m4;
+  CREATE INDEX idx_learning_evidence_node_time
+    ON learning_evidence(node_id, occurred_at DESC);
+
+  CREATE TABLE learner_node_states (
+    node_id TEXT PRIMARY KEY REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('NOT_STARTED', 'LEARNING', 'MASTERED')),
+    started_at TEXT,
+    mastered_at TEXT,
+    updated_at TEXT NOT NULL,
+    latest_evidence_id TEXT REFERENCES learning_evidence(id) ON DELETE SET NULL
+  ) STRICT;
+  INSERT INTO learner_node_states
+    (node_id, phase, started_at, mastered_at, updated_at, latest_evidence_id)
+  SELECT node_id, phase, started_at, mastered_at, updated_at, latest_evidence_id
+  FROM learner_node_states_m4;
+
+  DROP TABLE learner_node_states_m4;
+  DROP TABLE learning_evidence_m4;
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -228,6 +296,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_4);
       database.exec('PRAGMA user_version = 4;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 5) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_5);
+      database.exec('PRAGMA user_version = 5;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

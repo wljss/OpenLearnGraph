@@ -2,12 +2,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   completeDiagnosticInputSchema,
+  completeLearningSessionInputSchema,
   recordLearningEvidenceInputSchema,
   respondTutorDecisionInputSchema,
   saveAssessmentQuestionInputSchema,
   saveDiagnosticAnswerInputSchema,
+  saveLearningSessionDraftInputSchema,
   saveGraphInputSchema,
   startDiagnosticInputSchema,
+  startLearningSessionInputSchema,
 } from '../src/shared/contracts';
 
 const graphId = '11111111-1111-4111-8111-111111111111';
@@ -124,5 +127,37 @@ describe('tutor decision schemas', () => {
     expect(respondTutorDecisionInputSchema.safeParse({ decisionId, response: 'ACCEPTED' }).success).toBe(true);
     expect(respondTutorDecisionInputSchema.safeParse({ decisionId, response: 'IGNORED' }).success).toBe(false);
     expect(respondTutorDecisionInputSchema.safeParse({ decisionId: 'invalid', response: 'PENDING' }).success).toBe(false);
+  });
+});
+
+describe('learning session schemas', () => {
+  const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  it('allows only teaching-session actions and bounded drafts', () => {
+    expect(startLearningSessionInputSchema.safeParse({
+      graphId,
+      nodeId: firstNodeId,
+      action: 'TEACH',
+    }).success).toBe(true);
+    expect(startLearningSessionInputSchema.safeParse({
+      graphId,
+      nodeId: firstNodeId,
+      action: 'PRACTICE',
+    }).success).toBe(false);
+    expect(saveLearningSessionDraftInputSchema.safeParse({
+      sessionId,
+      notes: '',
+      stepIndex: 1,
+    }).success).toBe(true);
+    expect(saveLearningSessionDraftInputSchema.safeParse({
+      sessionId,
+      notes: 'x'.repeat(5_001),
+      stepIndex: 3,
+    }).success).toBe(false);
+  });
+
+  it('requires a nonblank reflection before completion', () => {
+    expect(completeLearningSessionInputSchema.safeParse({ sessionId, notes: '我的理解' }).success).toBe(true);
+    expect(completeLearningSessionInputSchema.safeParse({ sessionId, notes: '   ' }).success).toBe(false);
   });
 });

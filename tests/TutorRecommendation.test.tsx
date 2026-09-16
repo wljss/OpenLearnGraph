@@ -72,6 +72,15 @@ function installTutorApi(): OpenLearnGraphApi {
         response,
       })),
     },
+    sessions: {
+      list: vi.fn(),
+      getActive: vi.fn(),
+      get: vi.fn(),
+      start: vi.fn(),
+      saveDraft: vi.fn(),
+      complete: vi.fn(),
+      cancel: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;

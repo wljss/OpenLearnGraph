@@ -335,6 +335,13 @@ export class AssessmentRepository {
   }
 
   startDiagnostic(input: StartDiagnosticInput): DiagnosticAttemptView {
+    const activeLearningSession = this.database.prepare(
+      `SELECT id FROM learning_sessions
+       WHERE graph_id = ? AND status = 'IN_PROGRESS'
+       LIMIT 1`,
+    ).get(input.graphId) as { id: string } | undefined;
+    if (activeLearningSession) throw new Error('当前图谱有未完成的学习会话，请先继续或放弃后再开始诊断');
+
     const active = this.database.prepare(
       `SELECT id FROM assessment_attempts
        WHERE graph_id = ? AND status = 'IN_PROGRESS'
@@ -593,6 +600,7 @@ export class AssessmentRepository {
           scoreEarned: aggregate.correct,
           scorePossible: aggregate.total,
           assessmentAttemptId: input.attemptId,
+          learningSessionId: null,
         });
       }
       const complete = this.database.prepare(

@@ -105,6 +105,28 @@ describe('diagnostic assessment', () => {
       .toThrow('已经提交');
   });
 
+  it('prevents deleting a concept while it belongs to an active diagnosis', () => {
+    const graphId = createGraph();
+    addQuestion(sourceId, '题目一');
+    addQuestion(sourceId, '题目二');
+    const attempt = startDiagnostic(graphId);
+    expect(() => graphService.save({
+      id: graphId,
+      name: '诊断测试图谱',
+      nodes: [{ id: targetId, name: '进阶概念', description: '', position: { x: 220, y: 0 } }],
+      edges: [],
+    })).toThrow('正在未完成的诊断中');
+    expect(graphRepository.load(graphId)?.nodes).toHaveLength(2);
+
+    assessmentService.cancelDiagnostic(attempt.id);
+    expect(graphService.save({
+      id: graphId,
+      name: '诊断测试图谱',
+      nodes: [{ id: targetId, name: '进阶概念', description: '', position: { x: 220, y: 0 } }],
+      edges: [],
+    }).nodes).toHaveLength(1);
+  });
+
   it('creates objective evidence, updates graph state, and keeps diagnostics authoritative', () => {
     const graphId = createGraph();
     addQuestion(sourceId, '题目一');

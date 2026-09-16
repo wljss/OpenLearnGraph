@@ -100,8 +100,29 @@ export class GraphRepository {
       ).all(input.id) as unknown as Array<{ id: string }>;
       const inputNodeIds = new Set(input.nodes.map((node) => node.id));
       const deleteNode = this.database.prepare('DELETE FROM knowledge_nodes WHERE id = ? AND graph_id = ?');
+      const findActiveSession = this.database.prepare(
+        `SELECT node_name_snapshot
+         FROM learning_sessions
+         WHERE node_id = ? AND graph_id = ? AND status = 'IN_PROGRESS'
+         LIMIT 1`,
+      );
+      const findActiveDiagnostic = this.database.prepare(
+        `SELECT a.id
+         FROM assessment_attempts a
+         JOIN assessment_attempt_questions q ON q.attempt_id = a.id
+         WHERE q.node_id = ? AND a.graph_id = ? AND a.status = 'IN_PROGRESS'
+         LIMIT 1`,
+      );
       for (const existingNode of existingNodes) {
-        if (!inputNodeIds.has(existingNode.id)) deleteNode.run(existingNode.id, input.id);
+        if (inputNodeIds.has(existingNode.id)) continue;
+        const activeSession = findActiveSession.get(existingNode.id, input.id) as { node_name_snapshot: string } | undefined;
+        if (activeSession) {
+          throw new Error(`“${activeSession.node_name_snapshot}”有未完成的学习会话，请先继续或放弃会话再删除`);
+        }
+        if (findActiveDiagnostic.get(existingNode.id, input.id)) {
+          throw new Error('该概念正在未完成的诊断中，请先继续或放弃诊断再删除');
+        }
+        deleteNode.run(existingNode.id, input.id);
       }
       const insertNode = this.database.prepare(
         `INSERT INTO knowledge_nodes

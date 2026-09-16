@@ -5,13 +5,13 @@
 ```text
 React renderer
   → window.openLearnGraph（preload 中的窄类型 API）
-  → 明确命名的 graph / learning / assessment / tutor / lifecycle IPC
-  → GraphService / LearningService / AssessmentService / TutorService（Zod 边界验证）
-  → GraphRepository / LearningRepository / AssessmentRepository / TutorRepository
+  → 明确命名的 graph / learning / session / assessment / tutor / lifecycle IPC
+  → GraphService / LearningService / SessionService / AssessmentService / TutorService（Zod 边界验证）
+  → GraphRepository / LearningRepository / SessionRepository / AssessmentRepository / TutorRepository
   → SQLite（Electron userData）
 ```
 
-主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、诊断、学习建议与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
+主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、学习会话、诊断、学习建议与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
 
 ## SQLite 决策（ADR-001）
 
@@ -40,6 +40,12 @@ React renderer
 M4A 的 `TutorService` 读取 GraphRepository 投影后的知识与学习状态，并结合题库覆盖和活动诊断生成固定动作空间内的建议。纯函数策略按“继续未完成诊断 → 补强失败诊断 → 评估/练习学习中概念 → 学习已解锁概念 → 回顾已掌握图谱”的顺序决策，且不会把锁定概念作为学习目标。
 
 建议按图谱语义状态生成 SHA-256 指纹。相同状态复用已有决策；状态变化时旧决策只标记失效，保留原始理由、依据和用户响应。renderer 必须先通过受校验的 IPC 记录用户响应，再导航到概念或诊断中心。决策本身和采纳行为均不能写 Evidence 或 learner state，因而维持 `decision → user-confirmed execution → Evidence → projection` 的单向边界。
+
+## 学习会话一致性（ADR-007）
+
+M5A 的 `SessionService` 只允许为已解锁、未掌握且具有已保存描述的概念开始 `TEACH / ADVANCE` 会话。开始时复制概念名称、描述和先修状态，避免之后编辑图谱改写学习历史。每次笔记或步骤变化经防抖后写入本机，关闭会话时立即补存；Tutor 在状态指纹中包含活动会话，并优先建议恢复它。
+
+每个图谱只能有一个活动学习会话，并与活动诊断互斥。完成会话原子写入完成证据和投影，但只把没有客观诊断的未开始概念推进到 `LEARNING`；绝不覆盖诊断结论或降低 `MASTERED`。取消只结束活动状态，不生成证据。这样区分了“执行过学习行为”和“已经掌握”的语义。
 
 ## Windows 分发（ADR-004）
 

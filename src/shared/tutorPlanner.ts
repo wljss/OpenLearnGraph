@@ -10,6 +10,13 @@ export interface ActiveDiagnosticContext {
   targetNodeId: string | null;
 }
 
+export interface ActiveLearningSessionContext {
+  sessionId: string;
+  targetNodeId: string | null;
+  targetNodeName: string;
+  action: 'TEACH' | 'ADVANCE';
+}
+
 export interface TutorPlan {
   targetNodeId: string | null;
   targetNodeName: string;
@@ -61,6 +68,7 @@ function planForNode(
 export function planNextLearningAction(
   graph: KnowledgeGraphDocument,
   activeDiagnostic: ActiveDiagnosticContext | null = null,
+  activeLearningSession: ActiveLearningSessionContext | null = null,
 ): TutorPlan | null {
   if (!graph.nodes.length) return null;
 
@@ -76,6 +84,21 @@ export function planNextLearningAction(
       reason: '你有一项尚未完成的诊断，继续作答可以保留上下文并避免重复开始。',
       evidence: ['检测到未完成的诊断记录', '已作答内容保存在本机'],
       context: { attemptId: activeDiagnostic.attemptId },
+    };
+  }
+
+  if (activeLearningSession) {
+    const target = graph.nodes.find((node) => (
+      node.id === activeLearningSession.targetNodeId && node.status !== 'LOCKED'
+    ));
+    return {
+      targetNodeId: target?.id ?? null,
+      targetNodeName: target?.name ?? activeLearningSession.targetNodeName,
+      action: activeLearningSession.action,
+      reasonCode: 'RESUME_LEARNING_SESSION',
+      reason: '你有一项尚未完成的学习会话，笔记和步骤已经保存在本机。',
+      evidence: ['检测到未完成的学习会话', '学习笔记与当前步骤可恢复'],
+      context: { sessionId: activeLearningSession.sessionId },
     };
   }
 

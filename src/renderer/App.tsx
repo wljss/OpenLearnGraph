@@ -17,6 +17,10 @@ import { QuestionManager } from './features/assessment/QuestionManager';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
 import { TutorRecommendation } from './features/tutor/TutorRecommendation';
+import {
+  LearningSessionRunner,
+  type LearningSessionLaunch,
+} from './features/session/LearningSessionRunner';
 
 type NoticeTone = 'info' | 'success' | 'error';
 
@@ -82,7 +86,10 @@ export function App(): React.JSX.Element {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [questionManagerNodeId, setQuestionManagerNodeId] = useState<string | null>(null);
   const [diagnosticNodeIds, setDiagnosticNodeIds] = useState<string[] | null>(null);
-  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds);
+  const [sessionLaunch, setSessionLaunch] = useState<LearningSessionLaunch | null>(null);
+  const [recommendationRevision, setRecommendationRevision] = useState(0);
+  const [sessionDraftDirty, setSessionDraftDirty] = useState(false);
+  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds || sessionLaunch);
   const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
@@ -90,8 +97,8 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    window.openLearnGraph.lifecycle.setUnsavedChanges(dirty);
-  }, [dirty]);
+    window.openLearnGraph.lifecycle.setUnsavedChanges(dirty || sessionDraftDirty);
+  }, [dirty, sessionDraftDirty]);
 
   const loadGraph = useCallback(async (graphId: string): Promise<void> => {
     setBusy(true);
@@ -290,9 +297,16 @@ export function App(): React.JSX.Element {
     }
   }, [dirty, showNotice]);
 
-  const startLearning = useCallback((nodeId: string): Promise<boolean> => (
-    recordLearningEvidence({ nodeId, kind: 'STUDY_STARTED' })
-  ), [recordLearningEvidence]);
+  const openLearningSession = useCallback((nodeId: string): void => {
+    const node = graph?.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    if (!node.description.trim()) {
+      setSelectedNodeId(node.id);
+      showNotice('请先补充并保存概念描述，再开始学习会话。', 'error');
+      return;
+    }
+    setSessionLaunch({ nodeId, action: 'TEACH' });
+  }, [graph, showNotice]);
 
   const updateQuestionCount = useCallback((nodeId: string, count: number): void => {
     setGraph((current) => current ? {
@@ -309,10 +323,32 @@ export function App(): React.JSX.Element {
     setEvidenceState(null);
   }, []);
 
+  const notifySessionChanged = useCallback((): void => {
+    setRecommendationRevision((value) => value + 1);
+  }, []);
+
   const executeTutorDecision = useCallback((decision: TutorDecisionView): void => {
     if (decision.action === 'ASSESS') {
       setDiagnosticNodeIds(decision.targetNodeId ? [decision.targetNodeId] : []);
       showNotice('已打开诊断中心；只有提交诊断后才会写入学习证据。');
+      return;
+    }
+    if (decision.action === 'TEACH' || decision.action === 'ADVANCE') {
+      if (decision.context.sessionId) {
+        setSessionLaunch({ sessionId: decision.context.sessionId });
+        return;
+      }
+      const node = graph?.nodes.find((candidate) => candidate.id === decision.targetNodeId);
+      if (!node?.description.trim()) {
+        if (node) setSelectedNodeId(node.id);
+        showNotice('这个概念还没有学习内容，请先补充并保存右侧的概念描述。', 'error');
+        return;
+      }
+      setSessionLaunch({
+        nodeId: node.id,
+        action: decision.action,
+        sourceDecisionId: decision.id,
+      });
       return;
     }
     if (decision.targetNodeId) {
@@ -320,7 +356,7 @@ export function App(): React.JSX.Element {
       setNewNodeToFocusId(null);
       showNotice(`已定位到“${decision.targetNodeName}”；请根据建议自行学习或记录证据。`, 'success');
     }
-  }, [showNotice]);
+  }, [graph, showNotice]);
 
   const recordSelfAssessment = useCallback((
     nodeId: string,
@@ -349,17 +385,38 @@ export function App(): React.JSX.Element {
         : '此概念将在保存后从当前图谱中永久删除，且无法恢复。',
       confirmLabel: '删除概念',
       destructive: true,
-      action: () => {
-        replaceGraph({
-          ...graph,
-          nodes: graph.nodes.filter((candidate) => candidate.id !== nodeId),
-          edges: graph.edges.filter(
-            (edge) => edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId,
-          ),
-        });
-        setSelectedNodeId(null);
-        setNewNodeToFocusId(null);
-        showNotice('概念及其关联数据已标记删除。保存后永久生效。');
+      action: async () => {
+        setBusy(true);
+        try {
+          const [activeSession, attempts] = await Promise.all([
+            window.openLearnGraph.sessions.getActive(graph.id),
+            window.openLearnGraph.assessments.listDiagnosticAttempts(graph.id),
+          ]);
+          if (activeSession?.nodeId === nodeId) {
+            setSessionLaunch({ sessionId: activeSession.id });
+            showNotice(`“${node.name}”还有未完成的学习会话，请先继续或放弃会话。`, 'error');
+            return;
+          }
+          if (attempts.some((attempt) => attempt.status === 'IN_PROGRESS')) {
+            setDiagnosticNodeIds([]);
+            showNotice('当前图谱还有未完成的诊断，请先继续或放弃诊断。', 'error');
+            return;
+          }
+          replaceGraph({
+            ...graph,
+            nodes: graph.nodes.filter((candidate) => candidate.id !== nodeId),
+            edges: graph.edges.filter(
+              (edge) => edge.sourceNodeId !== nodeId && edge.targetNodeId !== nodeId,
+            ),
+          });
+          setSelectedNodeId(null);
+          setNewNodeToFocusId(null);
+          showNotice('概念及其关联数据已标记删除。保存后永久生效。');
+        } catch (error) {
+          showNotice(`删除前检查失败：${errorMessage(error)}`, 'error');
+        } finally {
+          setBusy(false);
+        }
       },
     });
   };
@@ -487,6 +544,15 @@ export function App(): React.JSX.Element {
           <div className="top-actions">
             <button
               type="button"
+              className="secondary-button session-launch"
+              disabled={!graph || dirty || interactionBusy}
+              title={dirty ? '请先保存图谱结构' : '继续学习或查看会话记录'}
+              onClick={() => setSessionLaunch({})}
+            >
+              ◎ 学习会话
+            </button>
+            <button
+              type="button"
               className="secondary-button diagnostic-launch"
               disabled={!graph?.nodes.length || dirty || interactionBusy}
               title={dirty ? '请先保存图谱结构' : '使用客观答题证据检查掌握情况'}
@@ -520,6 +586,7 @@ export function App(): React.JSX.Element {
             graph={graph}
             structureDirty={dirty}
             disabled={interactionBusy}
+            refreshToken={recommendationRevision}
             onExecute={executeTutorDecision}
             onMessage={showNotice}
           />
@@ -559,7 +626,7 @@ export function App(): React.JSX.Element {
             onAddNode={addNode}
             onUpdate={updateNode}
             onDelete={deleteNode}
-            onStartLearning={startLearning}
+            onStartLearning={openLearningSession}
             onRecordSelfAssessment={recordSelfAssessment}
             onManageQuestions={(nodeId) => setQuestionManagerNodeId(nodeId)}
           />
@@ -590,6 +657,17 @@ export function App(): React.JSX.Element {
           initialNodeIds={diagnosticNodeIds}
           onClose={() => setDiagnosticNodeIds(null)}
           onGraphUpdated={acceptDiagnosticGraph}
+          onMessage={showNotice}
+        />
+      )}
+      {sessionLaunch && graph && (
+        <LearningSessionRunner
+          graph={graph}
+          launch={sessionLaunch}
+          onClose={() => setSessionLaunch(null)}
+          onGraphUpdated={acceptDiagnosticGraph}
+          onSessionChanged={notifySessionChanged}
+          onDraftDirtyChange={setSessionDraftDirty}
           onMessage={showNotice}
         />
       )}

@@ -313,5 +313,65 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .history-copy span { color: #81908b; font-size: 9px; }
 .history-actions { display: flex; align-items: center; gap: 7px; }
 .history-actions .secondary-button { padding: 7px 9px; font-size: 10px; }
-@media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .content-grid { grid-template-columns: minmax(0, 1fr) 300px; } .diagnostic-launch { font-size: 0; } .diagnostic-launch::after { content: "诊断"; font-size: 13px; } .tutor-recommendation { padding-inline: 18px; } .tutor-main > p { max-width: 540px; } }
+.learning-session-runner { width: min(820px, 100%); max-height: min(800px, calc(100vh - 52px)); overflow: hidden; color: #33463f; border: 1px solid #cad6d2; border-radius: 15px; background: #fff; box-shadow: 0 28px 90px rgba(13,34,28,.3); }
+.session-loading { min-height: 420px; display: grid; place-items: center; margin: 0; color: #788984; font-size: 12px; }
+.session-header-actions { display: flex; align-items: center; gap: 13px; }
+.session-active-view { min-height: 570px; display: flex; flex-direction: column; }
+.session-stepper { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; padding: 16px 28px 15px; border-bottom: 1px solid #e4e9e7; background: #f8faf9; list-style: none; }
+.session-stepper li { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; color: #8a9793; font-size: 10px; font-weight: 750; }
+.session-stepper li:not(:last-child)::after { position: absolute; top: 50%; right: -28%; width: 55%; height: 1px; background: #d8e1de; content: ""; }
+.session-stepper li span { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid #cfdad7; border-radius: 50%; background: #fff; font-size: 9px; }
+.session-stepper li.active { color: #2f6e5e; }
+.session-stepper li.active span { color: #fff; border-color: #397868; background: #397868; box-shadow: 0 0 0 3px rgba(57,120,104,.11); }
+.session-stepper li.complete { color: #4f766c; }
+.session-stepper li.complete span { color: #34715f; border-color: #9fc2b8; background: #e9f4f0; }
+.session-step { min-height: 0; flex: 1; padding: 25px 30px 18px; overflow-y: auto; }
+.session-section-label { color: #4c796d; font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+.session-content-card { margin-top: 10px; padding: 20px 22px; color: #374c45; border: 1px solid #d6e1de; border-radius: 11px; background: linear-gradient(145deg, #fbfdfc, #f3f8f6); font-size: 14px; line-height: 1.85; white-space: pre-wrap; }
+.session-content-card p { margin: 0; }
+.session-prerequisites { margin-top: 14px; padding: 12px 14px; border: 1px solid #e3e8e6; border-radius: 9px; background: #fbfcfc; }
+.session-prerequisites strong { color: #52665f; font-size: 10px; }
+.session-prerequisites ul { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
+.session-prerequisites li { display: flex; align-items: center; gap: 7px; padding: 6px 8px; color: #475c55; border-radius: 6px; background: #edf3f1; font-size: 10px; }
+.session-prerequisites li span { color: #71817c; font-size: 8px; }
+.session-guidance { margin: 14px 2px 0; color: #7d8b87; font-size: 10px; line-height: 1.6; }
+.session-recall h3, .session-summary h3 { margin: 9px 0 6px; color: #2f453e; font-size: 18px; line-height: 1.45; }
+.session-recall > p { margin: 0 0 17px; color: #75847f; font-size: 11px; line-height: 1.6; }
+.session-recall label { position: relative; display: block; color: #52645f; font-size: 11px; font-weight: 700; }
+.session-recall textarea { width: 100%; margin-top: 7px; padding: 13px 14px 28px; color: #2e403a; border: 1px solid #cbd8d4; border-radius: 9px; outline: 0; background: #fbfcfc; font-size: 13px; font-weight: 400; line-height: 1.7; resize: vertical; }
+.session-recall textarea:focus { border-color: #6d9f91; box-shadow: 0 0 0 3px rgba(74,137,120,.12); }
+.session-character-count { position: absolute; right: 10px; bottom: 9px; color: #929e9a; font-size: 9px; font-weight: 500; }
+.session-note-preview, .session-note-missing { margin-top: 14px; padding: 17px 19px; border-radius: 10px; font-size: 12px; line-height: 1.75; white-space: pre-wrap; }
+.session-note-preview { color: #40564f; border: 1px solid #d3e0dc; background: #f6faf8; }
+.session-note-missing { color: #8a642d; border: 1px solid #ead9b9; background: #fff8eb; }
+.session-evidence-note { margin-top: 16px; padding: 13px 15px; color: #48645b; border-left: 3px solid #57917f; border-radius: 0 8px 8px 0; background: #edf6f3; }
+.session-evidence-note strong { font-size: 10px; }
+.session-evidence-note p { margin: 4px 0 0; font-size: 10px; line-height: 1.6; }
+.session-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 14px 28px 18px; border-top: 1px solid #e2e8e6; background: #fbfcfc; }
+.session-footer > span { color: #82908c; font-size: 9px; }
+.session-footer > div { display: flex; gap: 8px; }
+.session-review-view { min-height: 440px; padding: 34px; }
+.session-review-view h3 { margin: 16px 0 0; color: #344a43; font-size: 16px; }
+.session-review-view > p { color: #73827e; font-size: 11px; line-height: 1.6; }
+.session-review-view > button { margin-top: 18px; }
+.session-status-badge { display: inline-flex; padding: 4px 7px; color: #687873; border-radius: 999px; background: #edf1f0; font-size: 8px; font-weight: 800; }
+.session-status-badge.status-in_progress { color: #8b6822; background: #fff1c9; }
+.session-status-badge.status-completed { color: #2d705b; background: #e4f3ed; }
+.session-status-badge.status-cancelled { color: #7d7770; background: #eeeae5; }
+.session-center { min-height: 560px; padding-bottom: 24px; }
+.session-resume-card { width: calc(100% - 48px); display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 12px; margin: 20px 24px 4px; padding: 15px; color: #3c554d; border: 1px solid #9fc3b8; border-radius: 10px; background: #edf7f3; text-align: left; }
+.session-resume-card span { color: #427666; font-size: 9px; font-weight: 800; }
+.session-resume-card strong { font-size: 12px; }
+.session-resume-card small { color: #73847e; font-size: 9px; }
+.session-history { padding: 22px 24px 0; }
+.session-history > div { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.session-history > div strong { color: #40554e; font-size: 12px; }
+.session-history > div span { color: #889591; font-size: 9px; }
+.session-history ol { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.session-history li { border: 1px solid #dfe6e4; border-radius: 9px; background: #fbfcfc; }
+.session-history li > button { width: 100%; display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 11px; padding: 11px 12px; color: #496058; border: 0; background: transparent; text-align: left; }
+.session-history li > button > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.session-history li strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.session-history li small { color: #82908c; font-size: 9px; }
+@media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .content-grid { grid-template-columns: minmax(0, 1fr) 300px; } .diagnostic-launch, .session-launch { font-size: 0; } .diagnostic-launch::after { content: "诊断"; font-size: 13px; } .session-launch::after { content: "学习"; font-size: 13px; } .tutor-recommendation { padding-inline: 18px; } .tutor-main > p { max-width: 540px; } }
 @media (max-width: 760px) { .assessment-backdrop { padding: 12px; } .question-manager-body { grid-template-columns: 1fr; overflow-y: auto; } .question-list-panel { max-height: 220px; border-right: 0; border-bottom: 1px solid #e1e7e5; } .diagnostic-node-selector { grid-template-columns: 1fr; } .diagnostic-history li { grid-template-columns: 55px 1fr; } .history-actions { grid-column: 2; } .diagnostic-result-actions { align-items: stretch; flex-direction: column; } .diagnostic-result-actions button { width: 100%; } }

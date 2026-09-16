@@ -5,15 +5,18 @@ import { openDatabase } from './database/database';
 import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
+import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
+import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
+import { SessionService } from './services/sessionService';
 import { TutorService } from './services/tutorService';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -41,8 +44,8 @@ function createWindow(): void {
     const choice = dialog.showMessageBoxSync(window, {
       type: 'warning',
       title: '有尚未保存的更改',
-      message: '当前知识图谱还有尚未保存的更改。',
-      detail: '如果现在退出，这些更改将会丢失。',
+      message: '当前内容还有尚未保存的更改。',
+      detail: '可能包括图谱编辑或正在输入的学习笔记。如果现在退出，这些更改将会丢失。',
       buttons: ['继续编辑', '放弃更改并退出'],
       defaultId: 0,
       cancelId: 0,
@@ -67,6 +70,8 @@ void app.whenReady().then(() => {
   const graphRepository = new GraphRepository(database);
   const learningRepository = new LearningRepository(database);
   const assessmentRepository = new AssessmentRepository(database);
+  const tutorRepository = new TutorRepository(database);
+  const sessionRepository = new SessionRepository(database);
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
@@ -75,9 +80,16 @@ void app.whenReady().then(() => {
     learningRepository,
   ));
   registerTutorIpc(new TutorService(
-    new TutorRepository(database),
+    tutorRepository,
     graphRepository,
     assessmentRepository,
+    sessionRepository,
+  ));
+  registerSessionIpc(new SessionService(
+    sessionRepository,
+    graphRepository,
+    assessmentRepository,
+    tutorRepository,
   ));
   registerLifecycleIpc();
   createWindow();

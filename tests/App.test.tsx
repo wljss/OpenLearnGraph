@@ -92,6 +92,15 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       listDecisions: vi.fn().mockResolvedValue([]),
       respondDecision: vi.fn(),
     },
+    sessions: {
+      list: vi.fn().mockResolvedValue([]),
+      getActive: vi.fn().mockResolvedValue(null),
+      get: vi.fn(),
+      start: vi.fn(),
+      saveDraft: vi.fn(),
+      complete: vi.fn(),
+      cancel: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;
@@ -196,48 +205,41 @@ describe('renderer user flows', () => {
     expect(screen.getByText('概念及其关联数据已标记删除。保存后永久生效。')).toBeVisible();
   });
 
-  it('starts learning and immediately explains the persisted evidence', async () => {
-    const evidence = {
-      id: '44444444-4444-4444-8444-444444444444',
-      nodeId: firstGraph.nodes[0].id,
-      kind: 'STUDY_STARTED' as const,
-      rating: null,
-      note: '',
-      occurredAt: '2026-01-02T08:00:00.000Z',
-      scoreEarned: null,
-      scorePossible: null,
-      assessmentAttemptId: null,
-    };
-    const learningGraph: KnowledgeGraphDocument = {
-      ...firstGraph,
-      nodes: [{
-        ...firstGraph.nodes[0],
-        status: 'LEARNING',
-        learningPhase: 'LEARNING',
-        statusReason: '你已经开始学习；继续记录练习或自评证据。',
-        evidenceCount: 1,
-        lastEvidenceAt: evidence.occurredAt,
-      }],
-    };
+  it('opens a resumable learning session without immediately creating evidence', async () => {
     const api = installApi({
       list: vi.fn().mockResolvedValue([summary(firstGraph)]),
       load: vi.fn().mockResolvedValue(firstGraph),
     });
-    vi.mocked(api.learning.recordEvidence).mockResolvedValue({ graph: learningGraph, evidence });
-    vi.mocked(api.learning.listEvidence).mockResolvedValue([evidence]);
+    vi.mocked(api.sessions.start).mockResolvedValue({
+      id: '44444444-4444-4444-8444-444444444444',
+      graphId: firstGraph.id,
+      nodeId: firstGraph.nodes[0].id,
+      nodeName: '线性代数',
+      description: '基础知识',
+      prerequisites: [],
+      action: 'TEACH',
+      status: 'IN_PROGRESS',
+      notes: '',
+      stepIndex: 0,
+      sourceDecisionId: null,
+      startedAt: '2026-01-02T08:00:00.000Z',
+      updatedAt: '2026-01-02T08:00:00.000Z',
+      completedAt: null,
+    });
     render(<App />);
     await screen.findByText('已从本机加载知识图谱。');
 
     fireEvent.click(screen.getByText('线性代数'));
-    fireEvent.click(screen.getByRole('button', { name: '开始学习' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始学习会话' }));
 
-    await waitFor(() => expect(api.learning.recordEvidence).toHaveBeenCalledWith({
+    await waitFor(() => expect(api.sessions.start).toHaveBeenCalledWith({
+      graphId: firstGraph.id,
       nodeId: firstGraph.nodes[0].id,
-      kind: 'STUDY_STARTED',
+      action: 'TEACH',
     }));
-    expect(await screen.findByText('你已经开始学习；继续记录练习或自评证据。')).toBeVisible();
-    expect(await screen.findByText('开始学习', { selector: 'strong' })).toBeVisible();
-    expect(screen.getByText('已开始学习，并记录到本机证据时间线。')).toBeVisible();
+    expect(await screen.findByText('本次学习内容')).toBeVisible();
+    expect(within(screen.getByRole('dialog')).getByText('基础知识')).toBeVisible();
+    expect(api.learning.recordEvidence).not.toHaveBeenCalled();
   });
 
   it('records a self assessment and shows why the concept is mastered', async () => {
@@ -251,6 +253,7 @@ describe('renderer user flows', () => {
       scoreEarned: null,
       scorePossible: null,
       assessmentAttemptId: null,
+      learningSessionId: null,
     };
     const masteredGraph: KnowledgeGraphDocument = {
       ...firstGraph,
