@@ -114,6 +114,14 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       complete: vi.fn(),
       cancel: vi.fn(),
     },
+    documents: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      chooseFile: vi.fn().mockResolvedValue(null),
+      confirmImport: vi.fn(),
+      discardPreview: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;
@@ -130,6 +138,16 @@ describe('renderer user flows', () => {
     expect(screen.getByText('创建第一个知识图谱，开始搭建学习地图。')).toBeVisible();
     expect(screen.getByText('先创建知识图谱')).toBeVisible();
     expect(screen.queryByRole('button', { name: '添加第一个概念' })).not.toBeInTheDocument();
+  });
+
+  it('opens the local document library without requiring a graph', async () => {
+    const api = installApi();
+    render(<App />);
+    await screen.findByText('把学习目标变成一张活的知识地图');
+    fireEvent.click(screen.getByRole('button', { name: /本地资料/ }));
+    expect(await screen.findByRole('heading', { name: '本地资料库' })).toBeVisible();
+    expect(screen.getByText('还没有导入资料')).toBeVisible();
+    expect(api.documents.list).toHaveBeenCalledTimes(1);
   });
 
   it('creates a named graph and confirms that it was saved locally', async () => {

@@ -9,7 +9,8 @@
 - **M4B — Tutor policy extension**：在相同契约下扩展策略评估与可选 provider；任何非确定性输出必须通过 schema 与安全回退。
 - **M5A — Resumable local learning session（完成）**：基于已保存概念描述的教学/进阶会话、自动保存、跨重启恢复、历史与独立完成证据。
 - **M5B — Formative practice loop（完成）**：题目用途隔离、即时反馈、练习/回顾/补强、跨重启恢复、形成性证据与重新诊断闭环。
-- **M6 — Document import**：PDF/DOCX/Markdown/TXT 提取、分段和出处保留。
+- **M6A — Reliable local document import（完成）**：PDF/EPUB/Markdown/TXT 的本地确定性提取、元数据与章节/页码保留、导入前预览、编码识别、重复检测及扫描 PDF 提示。
+- **M6B — Extended document extraction**：DOCX、本地 OCR，以及更完整的表格与复杂版面保留。
 - **M7 — AI Knowledge Graph generation**：候选图谱、人工审核与编辑。
 - **M8 — Source-grounded learning / RAG**：来源支撑的检索与教学。
 - **M9 — Review scheduling**：复习调度与遗忘模型。

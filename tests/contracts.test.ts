@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   completeDiagnosticInputSchema,
   completeLearningSessionInputSchema,
+  confirmDocumentImportInputSchema,
   recordLearningEvidenceInputSchema,
   respondTutorDecisionInputSchema,
   saveAssessmentQuestionInputSchema,
@@ -186,5 +187,30 @@ describe('learning session schemas', () => {
   it('requires a nonblank reflection before completion', () => {
     expect(completeLearningSessionInputSchema.safeParse({ sessionId, notes: '我的理解' }).success).toBe(true);
     expect(completeLearningSessionInputSchema.safeParse({ sessionId, notes: '   ' }).success).toBe(false);
+  });
+});
+
+describe('document import schemas', () => {
+  const previewToken = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+  it('requires a valid preview token and a bounded nonblank title', () => {
+    expect(confirmDocumentImportInputSchema.safeParse({
+      previewToken,
+      title: '本地资料',
+      author: '',
+      publisher: '',
+      language: 'zh-CN',
+      identifier: '',
+    }).success).toBe(true);
+    expect(confirmDocumentImportInputSchema.safeParse({
+      previewToken,
+      title: '   ',
+      author: '', publisher: '', language: '', identifier: '',
+    }).success).toBe(false);
+    expect(confirmDocumentImportInputSchema.safeParse({
+      previewToken: 'invalid',
+      title: '资料',
+      author: '', publisher: '', language: '', identifier: '',
+    }).success).toBe(false);
   });
 });

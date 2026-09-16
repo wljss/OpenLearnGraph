@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
 import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
+import { registerDocumentIpc } from './ipc/registerDocumentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
 import { registerPracticeIpc } from './ipc/registerPracticeIpc';
@@ -10,12 +11,14 @@ import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
+import { DocumentRepository } from './repositories/documentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
 import { PracticeRepository } from './repositories/practiceRepository';
 import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
+import { DocumentService } from './services/documentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
 import { PracticeService } from './services/practiceService';
@@ -76,6 +79,7 @@ void app.whenReady().then(() => {
   const tutorRepository = new TutorRepository(database);
   const sessionRepository = new SessionRepository(database);
   const practiceRepository = new PracticeRepository(database);
+  const documentRepository = new DocumentRepository(database);
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
@@ -104,6 +108,7 @@ void app.whenReady().then(() => {
     sessionRepository,
     tutorRepository,
   ));
+  registerDocumentIpc(new DocumentService(documentRepository));
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {

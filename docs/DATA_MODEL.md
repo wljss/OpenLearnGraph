@@ -147,8 +147,39 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 每个图谱最多有一个活动练习，并与活动教学和诊断互斥。全部题目作答后，完成事务写入一条 `PRACTICE_RESULT` Evidence 和正确率。形成性练习只可把未开始状态推进至 `LEARNING`，不会建立或降低 `MASTERED`，也不会覆盖 learner state 中最近一次客观诊断指针；原始 Evidence 时间线仍会展示练习结果。取消只保留作答历史，不产生 Evidence。
 
-## 计划中的独立实体（M6+）
+## M6A 本地资料实体
 
-- `source_documents` / `source_chunks` / 节点来源关联
+### imported_documents
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id | TEXT | UUID，主键 |
+| title / author / publisher | TEXT | 确认导入前可编辑的书目信息 |
+| language / identifier | TEXT | 可选语言与 ISBN/其他标识 |
+| format | TEXT | `PDF / EPUB / TEXT / MARKDOWN` |
+| source_name / source_path | TEXT | 原文件名与仅在主进程使用的本机路径 |
+| source_size / source_modified_at | INTEGER / TEXT | 预览与确认之间的文件一致性检查 |
+| sha256 | TEXT | 内容散列，唯一约束用于重复检测 |
+| encoding | TEXT / NULL | 文本资料检测到的编码 |
+| page_count / section_count / character_count | INTEGER | 可检索的提取规模信息 |
+| warnings_json | TEXT | 经验证的结构化提取警告 |
+| imported_at | TEXT | ISO-8601 导入时间 |
+
+### imported_document_sections
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id / document_id | TEXT | UUID 主键 / 资料外键，删除资料时级联 |
+| order_index | INTEGER | 文档内稳定顺序，与资料构成唯一键 |
+| heading | TEXT | 章节标题、页标题或回退标题 |
+| locator | TEXT | `第 N 页`、EPUB 资源位置或文本章节位置 |
+| content | TEXT | 完整提取文本 |
+| character_count | INTEGER | 本节字符数 |
+
+文件选择、读取和提取只发生在 main。导入预览以短期随机 token 暂存在内存中，renderer 既不提供也不接收本机路径；确认时服务会再次核对原文件大小和修改时间，再在单个事务中写入资料与全部章节。扫描 PDF 等无法得到可靠文本的资料只返回受阻预览和可执行提示，不写入数据库。
+
+## 计划中的独立实体（M7+）
+
+- 候选图谱、资料片段与知识节点来源关联
 
 `mastery` 和用户状态绝不进入 `knowledge_nodes`。Evidence 保留原始结果和出处，learner model 根据证据更新状态，从而允许解释任一掌握度。

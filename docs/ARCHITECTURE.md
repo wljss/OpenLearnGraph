@@ -5,13 +5,13 @@
 ```text
 React renderer
   → window.openLearnGraph（preload 中的窄类型 API）
-  → 明确命名的 graph / learning / session / practice / assessment / tutor / lifecycle IPC
-  → GraphService / LearningService / SessionService / PracticeService / AssessmentService / TutorService（Zod 边界验证）
-  → GraphRepository / LearningRepository / SessionRepository / PracticeRepository / AssessmentRepository / TutorRepository
+  → 明确命名的 graph / learning / session / practice / assessment / tutor / document / lifecycle IPC
+  → GraphService / LearningService / SessionService / PracticeService / AssessmentService / TutorService / DocumentService（Zod 边界验证）
+  → GraphRepository / LearningRepository / SessionRepository / PracticeRepository / AssessmentRepository / TutorRepository / DocumentRepository
   → SQLite（Electron userData）
 ```
 
-主进程负责窗口、数据库与特权能力；preload 只桥接明确的图谱、学习证据、学习会话、形成性练习、诊断、学习建议与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
+主进程负责窗口、数据库、系统文件选择与其他特权能力；preload 只桥接明确的图谱、学习证据、学习会话、形成性练习、诊断、学习建议、资料导入与生命周期操作；renderer 是不可信 UI。BrowserWindow 启用 `contextIsolation` 和 `sandbox`，关闭 `nodeIntegration`，拒绝任意新窗口和页面导航，并在 HTML 设置 CSP。
 
 ## SQLite 决策（ADR-001）
 
@@ -52,6 +52,12 @@ M5A 的 `SessionService` 只允许为已解锁、未掌握且具有已保存描�
 M5B 将题目用途显式分为诊断、练习和通用。`PracticeService` 只读取练习或通用题，并在开始时复制不可变快照。未作答题目通过 preload 时移除正确性；答案提交后由 `PracticeRepository` 按快照评分、写入不可变响应，并只为该题返回反馈。诊断仍要等整场提交后才返回答案，因此练习的即时反馈不会改变诊断接口的保密边界。
 
 完成练习原子写入 `PRACTICE_RESULT`，但练习正确率不直接产生掌握结论。已有 `MASTERED` 或客观诊断投影保持不变，原始练习 Evidence 仍保留并作为 Tutor 重规划依据：失败诊断后的补强完成会转向重新诊断，回顾完成后不会立即重复建议。活动练习、教学会话和诊断互斥；服务层、数据库唯一索引和概念删除保护共同维持一致性。
+
+## 本地资料导入边界（ADR-009）
+
+M6A 的文件选择、读取、散列和解析只在 main 执行。renderer 只能请求打开受限扩展名的系统选择器，收到的是不含本机路径的结构化预览和短期随机 token；确认接口只接受 token 与经过 Zod 校验的可编辑元数据。服务在确认时重新核对文件大小和修改时间，并用 SHA-256 唯一约束阻止内容相同的重复资料。预览 token 仅保存在内存中、30 分钟后失效，关闭预览时主动释放。
+
+提取器是确定性的本地实现：PDF.js 按页提取文本及文档元数据，JSZip 与 XML 解析器按 EPUB package 的 spine 顺序读取章节，纯文本与 Markdown 先检测编码再解码并按标题分节。ZIP 内容不会释放到文件系统；单文件、解压总量、条目数、章节数和提取字符数都有上限。只有图像而没有可靠文本层的 PDF 返回受阻预览并提示后续使用 OCR，不会静默保存空内容。导入确认后，资料与完整章节在单个 SQLite 事务中持久化；这一阶段不调用 AI、网络服务，也不创建知识图谱。
 
 ## Windows 分发（ADR-004）
 

@@ -3,6 +3,7 @@ import {
   IPC_CHANNELS,
   type CompleteDiagnosticInput,
   type CompleteLearningSessionInput,
+  type ConfirmDocumentImportInput,
   type CreateGraphInput,
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
@@ -62,6 +63,14 @@ const api: OpenLearnGraphApi = {
     saveAnswer: (input: SavePracticeAnswerInput) => ipcRenderer.invoke(IPC_CHANNELS.practiceAnswerSave, input),
     complete: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptComplete, attemptId),
     cancel: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptCancel, attemptId),
+  },
+  documents: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.documentList),
+    get: (documentId: string) => ipcRenderer.invoke(IPC_CHANNELS.documentGet, documentId),
+    chooseFile: () => ipcRenderer.invoke(IPC_CHANNELS.documentChoose),
+    confirmImport: (input: ConfirmDocumentImportInput) => ipcRenderer.invoke(IPC_CHANNELS.documentImportConfirm, input),
+    discardPreview: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.documentPreviewDiscard, previewToken),
+    delete: (documentId: string) => ipcRenderer.invoke(IPC_CHANNELS.documentDelete, documentId),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

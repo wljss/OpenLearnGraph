@@ -22,6 +22,7 @@ import {
   type LearningSessionLaunch,
 } from './features/session/LearningSessionRunner';
 import { PracticeRunner, type PracticeLaunch } from './features/practice/PracticeRunner';
+import { DocumentLibrary } from './features/documents/DocumentLibrary';
 
 type NoticeTone = 'info' | 'success' | 'error';
 
@@ -91,7 +92,10 @@ export function App(): React.JSX.Element {
   const [practiceLaunch, setPracticeLaunch] = useState<PracticeLaunch | null>(null);
   const [recommendationRevision, setRecommendationRevision] = useState(0);
   const [sessionDraftDirty, setSessionDraftDirty] = useState(false);
-  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds || sessionLaunch || practiceLaunch);
+  const [documentLibraryOpen, setDocumentLibraryOpen] = useState(false);
+  const overlayOpen = Boolean(
+    questionManagerNodeId || diagnosticNodeIds || sessionLaunch || practiceLaunch || documentLibraryOpen,
+  );
   const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
@@ -567,8 +571,14 @@ export function App(): React.JSX.Element {
           />
           <button type="submit" disabled={interactionBusy || !newGraphName.trim()}>＋ 创建图谱</button>
         </form>
-        <button className="import-placeholder" type="button" disabled title="将在 M6 实现">
-          ⇧ 导入书籍 <span>M6</span>
+        <button
+          className="import-placeholder document-library-launch"
+          type="button"
+          disabled={busy || learningBusy || overlayOpen}
+          title="从本地文件提取并预览正文"
+          onClick={() => setDocumentLibraryOpen(true)}
+        >
+          ⇧ 本地资料 <span>M6A</span>
         </button>
         <div className="local-note">数据仅保存在此设备</div>
       </aside>
@@ -741,6 +751,12 @@ export function App(): React.JSX.Element {
           onClose={() => setPracticeLaunch(null)}
           onGraphUpdated={acceptDiagnosticGraph}
           onPracticeChanged={notifySessionChanged}
+          onMessage={showNotice}
+        />
+      )}
+      {documentLibraryOpen && (
+        <DocumentLibrary
+          onClose={() => setDocumentLibraryOpen(false)}
           onMessage={showNotice}
         />
       )}

@@ -23,6 +23,8 @@ describe('database migrations', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, '旧版概念', '', 10, 20, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
       oldDatabase.exec(`
+        DROP TABLE imported_document_sections;
+        DROP TABLE imported_documents;
         DROP TABLE learner_node_states;
         DROP TABLE learning_evidence;
         DROP TABLE practice_responses;
@@ -38,7 +40,7 @@ describe('database migrations', () => {
       const upgraded = openDatabase(filePath);
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
-      expect(version.user_version).toBe(6);
+      expect(version.user_version).toBe(7);
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tutor_decisions'",
       ).get()).toBeTruthy();
@@ -47,6 +49,9 @@ describe('database migrations', () => {
       ).get()).toBeTruthy();
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'practice_attempts'",
+      ).get()).toBeTruthy();
+      expect(upgraded.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'imported_documents'",
       ).get()).toBeTruthy();
       expect(restored?.nodes[0]).toMatchObject({ name: '旧版概念', status: 'AVAILABLE', evidenceCount: 0 });
       upgraded.close();
@@ -74,6 +79,8 @@ describe('database migrations', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, 'M2 概念', '', 10, 20, occurredAt, occurredAt);
       oldDatabase.exec(`
+        DROP TABLE imported_document_sections;
+        DROP TABLE imported_documents;
         DROP TABLE learner_node_states;
         DROP TABLE learning_evidence;
         DROP TABLE practice_responses;
@@ -124,7 +131,7 @@ describe('database migrations', () => {
         `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id, learning_session_id, practice_attempt_id
          FROM learning_evidence WHERE id = ?`,
       ).get(evidenceId);
-      expect(version.user_version).toBe(6);
+      expect(version.user_version).toBe(7);
       expect(restored?.nodes[0]).toMatchObject({ status: 'MASTERED', evidenceCount: 1, diagnosticQuestionCount: 0 });
       expect(evidence).toMatchObject({
         kind: 'SELF_ASSESSMENT',

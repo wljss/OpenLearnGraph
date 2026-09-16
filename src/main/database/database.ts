@@ -347,6 +347,44 @@ const MIGRATION_6 = `
   DROP TABLE learning_evidence_m5;
 `;
 
+const MIGRATION_7 = `
+  CREATE TABLE imported_documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    author TEXT NOT NULL DEFAULT '',
+    publisher TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    identifier TEXT NOT NULL DEFAULT '',
+    format TEXT NOT NULL CHECK (format IN ('PDF', 'EPUB', 'TEXT', 'MARKDOWN')),
+    source_name TEXT NOT NULL CHECK (length(trim(source_name)) > 0),
+    source_path TEXT NOT NULL CHECK (length(trim(source_path)) > 0),
+    source_size INTEGER NOT NULL CHECK (source_size > 0),
+    source_modified_at TEXT NOT NULL,
+    sha256 TEXT NOT NULL UNIQUE CHECK (length(sha256) = 64),
+    encoding TEXT,
+    page_count INTEGER CHECK (page_count IS NULL OR page_count > 0),
+    section_count INTEGER NOT NULL CHECK (section_count > 0),
+    char_count INTEGER NOT NULL CHECK (char_count > 0),
+    warnings_json TEXT NOT NULL CHECK (json_valid(warnings_json)),
+    imported_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX idx_imported_documents_time
+    ON imported_documents(imported_at DESC);
+
+  CREATE TABLE imported_document_sections (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES imported_documents(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    heading TEXT NOT NULL,
+    locator TEXT NOT NULL,
+    content TEXT NOT NULL CHECK (length(content) > 0),
+    char_count INTEGER NOT NULL CHECK (char_count > 0),
+    UNIQUE (document_id, position)
+  ) STRICT;
+  CREATE INDEX idx_imported_document_sections_document
+    ON imported_document_sections(document_id, position);
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -411,6 +449,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_6);
       database.exec('PRAGMA user_version = 6;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 7) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_7);
+      database.exec('PRAGMA user_version = 7;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

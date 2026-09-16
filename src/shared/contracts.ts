@@ -9,6 +9,8 @@ export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_R
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const QUESTION_PURPOSES = ['DIAGNOSTIC', 'PRACTICE', 'BOTH'] as const;
 export type QuestionPurpose = (typeof QUESTION_PURPOSES)[number];
+export const DOCUMENT_FORMATS = ['PDF', 'EPUB', 'TEXT', 'MARKDOWN'] as const;
+export type DocumentFormat = (typeof DOCUMENT_FORMATS)[number];
 export type SelfAssessmentRating = 1 | 2 | 3 | 4 | 5;
 export const TUTOR_ACTIONS = ['TEACH', 'ASSESS', 'PRACTICE', 'REVIEW', 'REMEDIATE', 'ADVANCE'] as const;
 export type TutorAction = (typeof TUTOR_ACTIONS)[number];
@@ -76,6 +78,20 @@ export const savePracticeAnswerInputSchema = z.object({
   attemptId: practiceAttemptIdInputSchema.shape.attemptId,
   attemptQuestionId: z.string().uuid('练习题目 ID 无效'),
   selectedOptionId: z.string().uuid('答案选项 ID 无效').nullable(),
+});
+export const documentIdInputSchema = z.object({
+  documentId: z.string().uuid('资料 ID 无效'),
+});
+export const documentPreviewTokenInputSchema = z.object({
+  previewToken: z.string().uuid('资料预览已失效'),
+});
+export const confirmDocumentImportInputSchema = z.object({
+  previewToken: documentPreviewTokenInputSchema.shape.previewToken,
+  title: z.string().trim().min(1, '资料标题不能为空').max(300, '资料标题不能超过 300 字'),
+  author: z.string().trim().max(300, '作者信息不能超过 300 字'),
+  publisher: z.string().trim().max(300, '出版社信息不能超过 300 字'),
+  language: z.string().trim().max(80, '语言信息不能超过 80 字'),
+  identifier: z.string().trim().max(200, '标识符不能超过 200 字'),
 });
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
@@ -195,6 +211,7 @@ export type SaveLearningSessionDraftInput = z.infer<typeof saveLearningSessionDr
 export type CompleteLearningSessionInput = z.infer<typeof completeLearningSessionInputSchema>;
 export type StartPracticeInput = z.infer<typeof startPracticeInputSchema>;
 export type SavePracticeAnswerInput = z.infer<typeof savePracticeAnswerInputSchema>;
+export type ConfirmDocumentImportInput = z.infer<typeof confirmDocumentImportInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -394,6 +411,66 @@ export interface CompletePracticeResult {
   evidence: LearningEvidenceView;
   graph: KnowledgeGraphDocument;
 }
+export type DocumentImportWarningSeverity = 'INFO' | 'WARNING' | 'BLOCKING';
+export interface DocumentImportWarningView {
+  code: string;
+  severity: DocumentImportWarningSeverity;
+  message: string;
+}
+export interface DocumentSectionPreviewView {
+  position: number;
+  heading: string;
+  locator: string;
+  content: string;
+  charCount: number;
+  truncated: boolean;
+}
+export interface DocumentPreviewView {
+  previewToken: string;
+  sourceName: string;
+  format: DocumentFormat;
+  fileSize: number;
+  modifiedAt: string;
+  sha256: string;
+  title: string;
+  author: string;
+  publisher: string;
+  language: string;
+  identifier: string;
+  encoding: string | null;
+  pageCount: number | null;
+  sectionCount: number;
+  charCount: number;
+  warnings: DocumentImportWarningView[];
+  sections: DocumentSectionPreviewView[];
+  canImport: boolean;
+  blockedReason: string | null;
+  duplicateDocumentId: string | null;
+  duplicateDocumentTitle: string | null;
+}
+export interface ImportedDocumentSummaryView {
+  id: string;
+  title: string;
+  author: string;
+  publisher: string;
+  language: string;
+  identifier: string;
+  format: DocumentFormat;
+  sourceName: string;
+  fileSize: number;
+  sha256: string;
+  encoding: string | null;
+  pageCount: number | null;
+  sectionCount: number;
+  charCount: number;
+  warningCount: number;
+  importedAt: string;
+}
+export interface ImportedDocumentView extends ImportedDocumentSummaryView {
+  modifiedAt: string;
+  warnings: DocumentImportWarningView[];
+  sections: DocumentSectionPreviewView[];
+}
 export interface TutorDecisionView {
   id: string;
   graphId: string;
@@ -456,6 +533,14 @@ export interface OpenLearnGraphApi {
     complete(attemptId: string): Promise<CompletePracticeResult>;
     cancel(attemptId: string): Promise<PracticeAttemptView>;
   };
+  documents: {
+    list(): Promise<ImportedDocumentSummaryView[]>;
+    get(documentId: string): Promise<ImportedDocumentView>;
+    chooseFile(): Promise<DocumentPreviewView | null>;
+    confirmImport(input: ConfirmDocumentImportInput): Promise<ImportedDocumentView>;
+    discardPreview(previewToken: string): Promise<void>;
+    delete(documentId: string): Promise<void>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -478,5 +563,8 @@ export const IPC_CHANNELS = {
   practiceAttemptGet: 'practice:get', practiceAttemptStart: 'practice:start',
   practiceAnswerSave: 'practice:answer-save', practiceAttemptComplete: 'practice:complete',
   practiceAttemptCancel: 'practice:cancel',
+  documentList: 'document:list', documentGet: 'document:get', documentChoose: 'document:choose',
+  documentImportConfirm: 'document:import-confirm', documentPreviewDiscard: 'document:preview-discard',
+  documentDelete: 'document:delete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;
