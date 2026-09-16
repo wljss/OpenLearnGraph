@@ -5,6 +5,15 @@ import type { DocumentService } from '../services/documentService';
 export function registerDocumentIpc(service: DocumentService): void {
   ipcMain.handle(IPC_CHANNELS.documentList, () => service.list());
   ipcMain.handle(IPC_CHANNELS.documentGet, (_event, documentId: unknown) => service.get(documentId));
+  ipcMain.handle(IPC_CHANNELS.documentSectionList, (_event, documentId: unknown, offset: unknown) => (
+    service.listSections(documentId, offset)
+  ));
+  ipcMain.handle(IPC_CHANNELS.documentSectionGet, (
+    _event, documentId: unknown, position: unknown, offset: unknown,
+  ) => service.getSection(documentId, position, offset));
+  ipcMain.handle(IPC_CHANNELS.documentSearch, (_event, documentId: unknown, query: unknown) => (
+    service.search(documentId, query)
+  ));
   ipcMain.handle(IPC_CHANNELS.documentChoose, async (event) => {
     const options: OpenDialogOptions = {
       title: '选择要导入的本地资料',

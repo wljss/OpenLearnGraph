@@ -53,7 +53,7 @@ describe('document import service', () => {
         identifier: preview.identifier,
       });
       importedIds.push(imported.id);
-      expect(imported.sections.some((section) => section.content.includes(sample.text))).toBe(true);
+      expect(service.getSection(imported.id, 0, 0).content).toContain(sample.text);
       const duplicate = await service.previewFile(filePath);
       expect(duplicate).toMatchObject({ canImport: false, duplicateDocumentId: imported.id });
       rmSync(filePath);
@@ -66,8 +66,10 @@ describe('document import service', () => {
     importedIds.forEach((id, index) => {
       const reopened = service.get(id);
       expect(reopened.format).toBe(cases[index].format);
-      expect(reopened.sections.some((section) => section.content.includes(cases[index].text))).toBe(true);
+      expect(service.getSection(id, 0, 0).content).toContain(cases[index].text);
     });
+    expect(service.search(importedIds[0], 'Hello PDF').hits[0].locator).toBe('第 1 页');
+    expect(service.search(importedIds[1], '机器学习').hits[0].locator).toContain('chapter1.xhtml');
     database.close();
   });
 
@@ -96,7 +98,7 @@ describe('document import service', () => {
     });
     expect(imported).toMatchObject({ title: '学习指南（校对版）', author: '测试作者', sectionCount: 1 });
     expect(service.list()).toHaveLength(1);
-    expect(service.get(imported.id).sections[0].content).toContain('先建立概念');
+    expect(service.getSection(imported.id, 0, 0).content).toContain('先建立概念');
 
     const duplicate = await service.previewFile(filePath);
     expect(duplicate).toMatchObject({
@@ -113,6 +115,44 @@ describe('document import service', () => {
     service.delete(imported.id);
     expect(service.list()).toEqual([]);
     expect(() => service.get(imported.id)).toThrow('不存在');
+    database.close();
+  });
+
+  it('loads later chapters and full long sections on demand, then locates exact text', async () => {
+    const { directory, database, service } = setup();
+    const filePath = join(directory, 'long.md');
+    const chapters = Array.from({ length: 70 }, (_, index) => (
+      `# 第 ${index + 1} 章\n\n${index === 69
+        ? `${'前'.repeat(26_000)}独有检索词。100%_原样。`
+        : `这是第 ${index + 1} 章的正文。`}`
+    )).join('\n\n');
+    writeFileSync(filePath, chapters, 'utf8');
+    const preview = await service.previewFile(filePath);
+    expect(preview.sectionCount).toBe(70);
+    expect(preview.sections).toHaveLength(12);
+    const imported = await service.confirmImport({
+      previewToken: preview.previewToken,
+      title: preview.title,
+      author: '', publisher: '', language: '', identifier: '',
+    });
+    expect(service.listSections(imported.id, 0)).toHaveLength(50);
+    expect(service.listSections(imported.id, 50)).toHaveLength(20);
+    expect(service.listSections(imported.id, 70)).toEqual([]);
+    const firstChunk = service.getSection(imported.id, 69, 0);
+    expect(firstChunk.content).toHaveLength(24_000);
+    expect(firstChunk.nextOffset).toBe(24_000);
+    const secondChunk = service.getSection(imported.id, 69, firstChunk.nextOffset as number);
+    expect(secondChunk.content).toContain('独有检索词');
+    expect(secondChunk.previousOffset).toBe(0);
+    expect(secondChunk.nextOffset).toBeNull();
+    const result = service.search(imported.id, '独有检索词');
+    expect(result).toMatchObject({ hasMore: false, hits: [{ position: 69, heading: '第 70 章' }] });
+    expect(result.hits[0].matchOffset).toBeGreaterThan(24_000);
+    expect(service.getSection(imported.id, 69, result.hits[0].matchOffset - 80).content).toContain('独有检索词');
+    expect(service.search(imported.id, '100%_原样').hits).toHaveLength(1);
+    expect(() => service.search(imported.id, '一')).toThrow('至少输入 2 个字符');
+    expect(() => service.getSection(imported.id, 69, -1)).toThrow('正文位置无效');
+    expect(() => service.getSection(imported.id, 69, 10_000_000)).toThrow('超出范围');
     database.close();
   });
 

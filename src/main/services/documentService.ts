@@ -6,6 +6,12 @@ import {
   confirmDocumentImportInputSchema,
   documentIdInputSchema,
   documentPreviewTokenInputSchema,
+  documentSearchInputSchema,
+  documentSectionGetInputSchema,
+  documentSectionListInputSchema,
+  type DocumentSearchView,
+  type DocumentSectionSummaryView,
+  type DocumentSectionView,
   type DocumentPreviewView,
   type DocumentSectionPreviewView,
   type ImportedDocumentSummaryView,
@@ -107,6 +113,41 @@ export class DocumentService {
     const document = this.repository.find(parsed.data.documentId);
     if (!document) throw new Error('要查看的资料不存在');
     return document;
+  }
+
+  listSections(untrustedDocumentId: unknown, untrustedOffset: unknown): DocumentSectionSummaryView[] {
+    const parsed = documentSectionListInputSchema.safeParse({
+      documentId: untrustedDocumentId, offset: untrustedOffset,
+    });
+    if (!parsed.success) throw validationError(parsed);
+    this.get(parsed.data.documentId);
+    return this.repository.listSections(parsed.data.documentId, parsed.data.offset);
+  }
+
+  getSection(
+    untrustedDocumentId: unknown,
+    untrustedPosition: unknown,
+    untrustedOffset: unknown,
+  ): DocumentSectionView {
+    const parsed = documentSectionGetInputSchema.safeParse({
+      documentId: untrustedDocumentId, position: untrustedPosition, offset: untrustedOffset,
+    });
+    if (!parsed.success) throw validationError(parsed);
+    this.get(parsed.data.documentId);
+    const section = this.repository.getSection(
+      parsed.data.documentId, parsed.data.position, parsed.data.offset,
+    );
+    if (!section) throw new Error('要查看的章节不存在');
+    return section;
+  }
+
+  search(untrustedDocumentId: unknown, untrustedQuery: unknown): DocumentSearchView {
+    const parsed = documentSearchInputSchema.safeParse({
+      documentId: untrustedDocumentId, query: untrustedQuery,
+    });
+    if (!parsed.success) throw validationError(parsed);
+    this.get(parsed.data.documentId);
+    return this.repository.search(parsed.data.documentId, parsed.data.query);
   }
 
   async previewFile(filePath: string): Promise<DocumentPreviewView> {

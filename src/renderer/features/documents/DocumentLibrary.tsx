@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   DocumentPreviewView,
+  DocumentSearchView,
   DocumentSectionPreviewView,
+  DocumentSectionSummaryView,
+  DocumentSectionView,
   ImportedDocumentSummaryView,
   ImportedDocumentView,
 } from '../../../shared/contracts';
@@ -43,10 +46,9 @@ function metadataFromPreview(preview: DocumentPreviewView): EditableMetadata {
   };
 }
 
-function SectionReader({ sections, totalSections, isImportPreview }: {
+function SectionReader({ sections, totalSections }: {
   sections: DocumentSectionPreviewView[];
   totalSections: number;
-  isImportPreview: boolean;
 }): React.JSX.Element {
   const [selectedPosition, setSelectedPosition] = useState(sections[0]?.position ?? 0);
   const selected = sections.find((section) => section.position === selectedPosition) ?? sections[0];
@@ -63,7 +65,7 @@ function SectionReader({ sections, totalSections, isImportPreview }: {
         {totalSections > sections.length && (
           <p className="document-preview-limit">
             当前仅展示前 {sections.length} / {totalSections} 节；
-            {isImportPreview ? '确认导入时会保存全部正文。' : '其余章节也已保存在本机。'}
+            确认导入时会保存全部正文。
           </p>
         )}
         <ol>{sections.map((section) => (
@@ -82,7 +84,235 @@ function SectionReader({ sections, totalSections, isImportPreview }: {
       <article>
         <header><span>{selected.locator}</span><strong>{selected.heading}</strong></header>
         <pre>{selected.content}</pre>
-        {selected.truncated && <p>这里只显示本节前 {selected.content.length.toLocaleString('zh-CN')} 个字符；{isImportPreview ? '确认导入时会保存完整正文。' : '完整正文已保存在本机。'}</p>}
+        {selected.truncated && <p>这里只显示本节前 {selected.content.length.toLocaleString('zh-CN')} 个字符；确认导入时会保存完整正文。</p>}
+      </article>
+    </div>
+  );
+}
+
+function ImportedDocumentReader({ document, onMessage }: {
+  document: ImportedDocumentView;
+  onMessage: DocumentLibraryProps['onMessage'];
+}): React.JSX.Element {
+  const [sections, setSections] = useState<DocumentSectionSummaryView[]>([]);
+  const [selected, setSelected] = useState<DocumentSectionView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingSection, setLoadingSection] = useState(false);
+  const [jumpTarget, setJumpTarget] = useState('');
+  const [query, setQuery] = useState('');
+  const [activeQuery, setActiveQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<DocumentSearchView | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [readerError, setReaderError] = useState<string | null>(null);
+  const sectionRequest = useRef(0);
+  const searchRequest = useRef(0);
+  const markRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      window.openLearnGraph.documents.listSections(document.id, 0),
+      window.openLearnGraph.documents.getSection(document.id, 0, 0),
+    ]).then(([headings, first]) => {
+      if (!active) return;
+      setSections(headings);
+      setSelected(first);
+    }).catch((error: unknown) => {
+      if (active) {
+        const message = `资料正文加载失败：${errorMessage(error)}`;
+        setReaderError(message);
+        onMessage(message, 'error');
+      }
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+      sectionRequest.current += 1;
+      searchRequest.current += 1;
+    };
+  }, [document.id, onMessage]);
+
+  useEffect(() => {
+    markRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [activeQuery, selected?.position, selected?.startOffset]);
+
+  const openSection = async (position: number, offset = 0): Promise<void> => {
+    const request = ++sectionRequest.current;
+    setLoadingSection(true);
+    setReaderError(null);
+    try {
+      const section = await window.openLearnGraph.documents.getSection(document.id, position, offset);
+      if (request !== sectionRequest.current) return;
+      setSelected(section);
+    } catch (error) {
+      if (request === sectionRequest.current) {
+        const message = `章节打开失败：${errorMessage(error)}`;
+        setReaderError(message);
+        onMessage(message, 'error');
+      }
+    } finally {
+      if (request === sectionRequest.current) setLoadingSection(false);
+    }
+  };
+
+  const loadMore = async (): Promise<void> => {
+    if (loadingMore || sections.length >= document.sectionCount) return;
+    setLoadingMore(true);
+    setReaderError(null);
+    try {
+      const next = await window.openLearnGraph.documents.listSections(document.id, sections.length);
+      if (!next.length) throw new Error('后续章节暂时无法读取');
+      setSections((current) => [...current, ...next]);
+    } catch (error) {
+      const message = `章节目录加载失败：${errorMessage(error)}`;
+      setReaderError(message);
+      onMessage(message, 'error');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const runSearch = async (): Promise<void> => {
+    const searchTerm = query.trim();
+    if (searchTerm.length < 2) return;
+    const request = ++searchRequest.current;
+    setSearching(true);
+    setReaderError(null);
+    try {
+      const result = await window.openLearnGraph.documents.search(document.id, searchTerm);
+      if (request !== searchRequest.current) return;
+      setSearchResults(result);
+      setActiveQuery(searchTerm);
+    } catch (error) {
+      if (request === searchRequest.current) {
+        const message = `资料搜索失败：${errorMessage(error)}`;
+        setReaderError(message);
+        onMessage(message, 'error');
+      }
+    } finally {
+      if (request === searchRequest.current) setSearching(false);
+    }
+  };
+
+  const jump = (): void => {
+    const number = Number(jumpTarget);
+    if (!Number.isInteger(number) || number < 1 || number > document.sectionCount) {
+      onMessage(`请输入 1–${document.sectionCount} 之间的章节序号。`, 'error');
+      setReaderError(`请输入 1–${document.sectionCount} 之间的章节序号。`);
+      return;
+    }
+    void openSection(number - 1);
+  };
+
+  const highlightedContent = (): React.ReactNode => {
+    if (!selected) return null;
+    const offset = activeQuery
+      ? selected.content.toLocaleLowerCase().indexOf(activeQuery.toLocaleLowerCase())
+      : -1;
+    if (offset < 0) return selected.content;
+    return <>
+      {selected.content.slice(0, offset)}
+      <mark ref={markRef}>{selected.content.slice(offset, offset + activeQuery.length)}</mark>
+      {selected.content.slice(offset + activeQuery.length)}
+    </>;
+  };
+
+  return (
+    <div className="document-reader document-full-reader">
+      <aside aria-label="章节与搜索">
+        {readerError && <p className="document-reader-error" role="alert">{readerError}</p>}
+        <form className="document-reader-search" onSubmit={(event) => { event.preventDefault(); void runSearch(); }}>
+          <label htmlFor="document-search-input">搜索正文</label>
+          <div>
+            <input
+              id="document-search-input"
+              value={query}
+              maxLength={80}
+              placeholder="输入至少 2 个字符"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSearchResults(null);
+                setActiveQuery('');
+                searchRequest.current += 1;
+                setSearching(false);
+              }}
+            />
+            <button type="submit" disabled={searching || query.trim().length < 2}>
+              {searching ? '查找中…' : '查找'}
+            </button>
+          </div>
+        </form>
+        {searchResults && (
+          <div className="document-search-results" aria-live="polite">
+            <strong>匹配章节 · {searchResults.hits.length}{searchResults.hasMore ? '+' : ''}</strong>
+            {searchResults.hits.length ? (
+              <ol>{searchResults.hits.map((hit) => (
+                <li key={hit.position}>
+                  <button type="button" onClick={() => void openSection(hit.position, Math.max(0, hit.matchOffset - 80))}>
+                    <span>{hit.heading}</span>
+                    <small>{hit.locator} · {hit.excerpt}</small>
+                  </button>
+                </li>
+              ))}</ol>
+            ) : <p>没有找到包含该词的章节。</p>}
+            {searchResults.hasMore && <p>仅显示前 50 个匹配章节，请使用更具体的搜索词。</p>}
+          </div>
+        )}
+        <div className="document-jump">
+          <label htmlFor="document-jump-input">跳到第几节</label>
+          <div>
+            <input
+              id="document-jump-input"
+              type="number"
+              min="1"
+              max={document.sectionCount}
+              value={jumpTarget}
+              placeholder={`1–${document.sectionCount}`}
+              onChange={(event) => setJumpTarget(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') jump(); }}
+            />
+            <button type="button" onClick={jump}>跳转</button>
+          </div>
+        </div>
+        <strong>章节目录 · {sections.length} / {document.sectionCount}</strong>
+        <ol>{sections.map((section) => (
+          <li key={section.position}>
+            <button
+              type="button"
+              className={section.position === selected?.position ? 'active' : ''}
+              onClick={() => void openSection(section.position)}
+            >
+              <span>{section.heading}</span>
+              <small>{section.locator} · {section.charCount.toLocaleString('zh-CN')} 字符</small>
+            </button>
+          </li>
+        ))}</ol>
+        {sections.length < document.sectionCount && (
+          <button className="document-load-more" type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? '正在加载…' : '加载后续章节'}
+          </button>
+        )}
+      </aside>
+      <article>
+        {loading ? <p>正在读取章节与正文……</p> : selected ? <>
+          <header>
+            <span>{document.sourceName} · {selected.locator} · 第 {selected.position + 1} / {document.sectionCount} 节</span>
+            <strong>{selected.heading}</strong>
+          </header>
+          {loadingSection && <p role="status">正在定位正文……</p>}
+          <pre>{highlightedContent()}</pre>
+          {(selected.previousOffset !== null || selected.nextOffset !== null) && (
+            <nav className="document-chunk-navigation" aria-label="本节正文分页">
+              <span>本节第 {(selected.startOffset + 1).toLocaleString('zh-CN')}–{selected.endOffset.toLocaleString('zh-CN')} / {selected.totalLength.toLocaleString('zh-CN')} 字符</span>
+              <div>
+                <button type="button" disabled={loadingSection || selected.previousOffset === null} onClick={() => void openSection(selected.position, selected.previousOffset as number)}>上一段</button>
+                <button type="button" disabled={loadingSection || selected.nextOffset === null} onClick={() => void openSection(selected.position, selected.nextOffset as number)}>下一段</button>
+              </div>
+            </nav>
+          )}
+        </> : <div className="document-no-text">章节暂时无法读取，请返回资料库后重试。</div>}
       </article>
     </div>
   );
@@ -320,7 +550,9 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
                   查看已导入的“{preview.duplicateDocumentTitle}”
                 </button>
               )}
-              <SectionReader sections={current.sections} totalSections={current.sectionCount} isImportPreview={Boolean(preview)} />
+              {preview
+                ? <SectionReader sections={preview.sections} totalSections={preview.sectionCount} />
+                : detail && <ImportedDocumentReader key={detail.id} document={detail} onMessage={onMessage} />}
 
               <footer className="document-review-footer">
                 <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改或上传</span>

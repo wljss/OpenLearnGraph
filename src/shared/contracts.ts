@@ -85,6 +85,19 @@ export const documentIdInputSchema = z.object({
 export const documentPreviewTokenInputSchema = z.object({
   previewToken: z.string().uuid('资料预览已失效'),
 });
+export const documentSectionListInputSchema = z.object({
+  documentId: documentIdInputSchema.shape.documentId,
+  offset: z.number().int('章节位置无效').min(0, '章节位置无效').max(5000, '章节位置无效'),
+});
+export const documentSectionGetInputSchema = z.object({
+  documentId: documentIdInputSchema.shape.documentId,
+  position: z.number().int('章节位置无效').min(0, '章节位置无效').max(4999, '章节位置无效'),
+  offset: z.number().int('正文位置无效').min(0, '正文位置无效').max(10_000_000, '正文位置无效'),
+});
+export const documentSearchInputSchema = z.object({
+  documentId: documentIdInputSchema.shape.documentId,
+  query: z.string().trim().min(2, '请至少输入 2 个字符').max(80, '搜索词不能超过 80 个字符'),
+});
 export const confirmDocumentImportInputSchema = z.object({
   previewToken: documentPreviewTokenInputSchema.shape.previewToken,
   title: z.string().trim().min(1, '资料标题不能为空').max(300, '资料标题不能超过 300 字'),
@@ -469,7 +482,28 @@ export interface ImportedDocumentSummaryView {
 export interface ImportedDocumentView extends ImportedDocumentSummaryView {
   modifiedAt: string;
   warnings: DocumentImportWarningView[];
-  sections: DocumentSectionPreviewView[];
+}
+export interface DocumentSectionSummaryView {
+  position: number;
+  heading: string;
+  locator: string;
+  charCount: number;
+}
+export interface DocumentSectionView extends DocumentSectionSummaryView {
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  totalLength: number;
+  previousOffset: number | null;
+  nextOffset: number | null;
+}
+export interface DocumentSearchHitView extends DocumentSectionSummaryView {
+  excerpt: string;
+  matchOffset: number;
+}
+export interface DocumentSearchView {
+  hits: DocumentSearchHitView[];
+  hasMore: boolean;
 }
 export interface TutorDecisionView {
   id: string;
@@ -536,6 +570,9 @@ export interface OpenLearnGraphApi {
   documents: {
     list(): Promise<ImportedDocumentSummaryView[]>;
     get(documentId: string): Promise<ImportedDocumentView>;
+    listSections(documentId: string, offset: number): Promise<DocumentSectionSummaryView[]>;
+    getSection(documentId: string, position: number, offset: number): Promise<DocumentSectionView>;
+    search(documentId: string, query: string): Promise<DocumentSearchView>;
     chooseFile(): Promise<DocumentPreviewView | null>;
     confirmImport(input: ConfirmDocumentImportInput): Promise<ImportedDocumentView>;
     discardPreview(previewToken: string): Promise<void>;
@@ -563,7 +600,9 @@ export const IPC_CHANNELS = {
   practiceAttemptGet: 'practice:get', practiceAttemptStart: 'practice:start',
   practiceAnswerSave: 'practice:answer-save', practiceAttemptComplete: 'practice:complete',
   practiceAttemptCancel: 'practice:cancel',
-  documentList: 'document:list', documentGet: 'document:get', documentChoose: 'document:choose',
+  documentList: 'document:list', documentGet: 'document:get',
+  documentSectionList: 'document:section-list', documentSectionGet: 'document:section-get',
+  documentSearch: 'document:search', documentChoose: 'document:choose',
   documentImportConfirm: 'document:import-confirm', documentPreviewDiscard: 'document:preview-discard',
   documentDelete: 'document:delete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',

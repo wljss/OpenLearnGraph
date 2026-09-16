@@ -4,7 +4,9 @@ import type {
   ConfirmDocumentImportInput,
   DocumentFormat,
   DocumentImportWarningView,
-  DocumentSectionPreviewView,
+  DocumentSearchView,
+  DocumentSectionSummaryView,
+  DocumentSectionView,
   ImportedDocumentSummaryView,
   ImportedDocumentView,
 } from '../../shared/contracts';
@@ -34,8 +36,17 @@ interface SectionRow {
   position: number;
   heading: string;
   locator: string;
-  content: string;
   char_count: number;
+}
+
+interface SectionContentRow extends SectionRow {
+  content: string;
+  total_length: number;
+}
+
+interface SearchRow extends SectionRow {
+  excerpt: string;
+  match_at: number;
 }
 
 export interface NewImportedDocument {
@@ -51,6 +62,9 @@ export interface NewImportedDocument {
 const DOCUMENT_COLUMNS = `id, title, author, publisher, language, identifier, format,
   source_name, source_size, source_modified_at, sha256, encoding, page_count,
   section_count, char_count, warnings_json, imported_at`;
+const SECTION_PAGE_SIZE = 50;
+const SECTION_CHUNK_SIZE = 24_000;
+const SEARCH_RESULT_LIMIT = 50;
 
 function parseWarnings(value: string): DocumentImportWarningView[] {
   const parsed: unknown = JSON.parse(value);
@@ -84,15 +98,12 @@ function toSummary(row: DocumentRow): ImportedDocumentSummaryView {
   };
 }
 
-function previewSection(row: SectionRow): DocumentSectionPreviewView {
-  const limit = 8_000;
+function sectionSummary(row: SectionRow): DocumentSectionSummaryView {
   return {
     position: Number(row.position),
     heading: row.heading,
     locator: row.locator,
-    content: row.content.slice(0, limit),
     charCount: Number(row.char_count),
-    truncated: row.content.length > limit,
   };
 }
 
@@ -121,18 +132,68 @@ export class DocumentRepository {
       `SELECT ${DOCUMENT_COLUMNS} FROM imported_documents WHERE id = ?`,
     ).get(documentId) as DocumentRow | undefined;
     if (!row) return null;
-    const sections = this.database.prepare(
-      `SELECT position, heading, locator, content, char_count
-       FROM imported_document_sections
-       WHERE document_id = ?
-       ORDER BY position
-       LIMIT 50`,
-    ).all(documentId) as unknown as SectionRow[];
     return {
       ...toSummary(row),
       modifiedAt: row.source_modified_at,
       warnings: parseWarnings(row.warnings_json),
-      sections: sections.map(previewSection),
+    };
+  }
+
+  listSections(documentId: string, offset: number): DocumentSectionSummaryView[] {
+    const rows = this.database.prepare(
+      `SELECT position, heading, locator, char_count
+       FROM imported_document_sections
+       WHERE document_id = ?
+       ORDER BY position
+       LIMIT ? OFFSET ?`,
+    ).all(documentId, SECTION_PAGE_SIZE, offset) as unknown as SectionRow[];
+    return rows.map(sectionSummary);
+  }
+
+  getSection(documentId: string, position: number, offset: number): DocumentSectionView | null {
+    const row = this.database.prepare(
+      `SELECT position, heading, locator, char_count,
+              length(content) AS total_length,
+              substr(content, ?, ?) AS content
+       FROM imported_document_sections
+       WHERE document_id = ? AND position = ?`,
+    ).get(offset + 1, SECTION_CHUNK_SIZE, documentId, position) as SectionContentRow | undefined;
+    if (!row) return null;
+    const totalLength = Number(row.total_length);
+    if (offset >= totalLength) throw new Error('正文位置超出范围，请从章节开头重新打开');
+    const endOffset = Math.min(offset + SECTION_CHUNK_SIZE, totalLength);
+    return {
+      ...sectionSummary(row),
+      content: row.content,
+      startOffset: offset,
+      endOffset,
+      totalLength,
+      previousOffset: offset > 0 ? Math.max(0, offset - SECTION_CHUNK_SIZE) : null,
+      nextOffset: endOffset < totalLength ? endOffset : null,
+    };
+  }
+
+  search(documentId: string, query: string): DocumentSearchView {
+    const rows = this.database.prepare(
+      `SELECT position, heading, locator, char_count, match_at,
+              substr(content, max(1, match_at - 48), 160) AS excerpt
+       FROM (
+         SELECT position, heading, locator, char_count, content,
+                instr(lower(content), lower(?)) AS match_at
+         FROM imported_document_sections
+         WHERE document_id = ?
+       )
+       WHERE match_at > 0
+       ORDER BY position
+       LIMIT ?`,
+    ).all(query, documentId, SEARCH_RESULT_LIMIT + 1) as unknown as SearchRow[];
+    return {
+      hits: rows.slice(0, SEARCH_RESULT_LIMIT).map((row) => ({
+        ...sectionSummary(row),
+        excerpt: row.excerpt.trim(),
+        matchOffset: Number(row.match_at) - 1,
+      })),
+      hasMore: rows.length > SEARCH_RESULT_LIMIT,
     };
   }
 

@@ -117,6 +117,9 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
     documents: {
       list: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
+      listSections: vi.fn().mockResolvedValue([]),
+      getSection: vi.fn(),
+      search: vi.fn().mockResolvedValue({ hits: [], hasMore: false }),
       chooseFile: vi.fn().mockResolvedValue(null),
       confirmImport: vi.fn(),
       discardPreview: vi.fn().mockResolvedValue(undefined),

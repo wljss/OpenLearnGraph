@@ -171,7 +171,8 @@ async function checkFile(app, sample) {
   assert.equal(preview.canImport, true, preview.blockedReason ?? '无法导入');
   assert(preview.sections.some((item) => item.content.includes(sample.text)), `${sample.format} 预览缺少预期正文`);
   const imported = await call(app, `confirmImport(${JSON.stringify(makeMetadata(preview))})`);
-  assert(imported.sections.some((item) => item.content.includes(sample.text)), `${sample.format} 保存结果缺少预期正文`);
+  const section = await call(app, `getSection(${JSON.stringify(imported.id)}, 0, 0)`);
+  assert(section.content.includes(sample.text), `${sample.format} 保存结果缺少预期正文`);
   const duplicate = await call(app, 'chooseFile()');
   assert.equal(duplicate.canImport, false);
   assert.equal(duplicate.duplicateDocumentId, imported.id);
@@ -203,8 +204,23 @@ async function main() {
     await writeFile(badEpub, 'not an epub');
     await writeFile(badPdf, 'not a pdf');
     await writeFile(malformedPdf, '%PDF-1.4\nbroken');
+    const longPath = join(root, '长资料.md');
+    const longText = Array.from({ length: 70 }, (_, index) => (
+      `# 第 ${index + 1} 章\n\n${index === 69 ? `${'前'.repeat(26_000)}独有检索词。` : `这是第 ${index + 1} 章的正文。`}`
+    )).join('\n\n');
+    await writeFile(longPath, longText);
 
     app = await launch(profile);
+    await selectFile(app, longPath);
+    const longPreview = await call(app, 'chooseFile()');
+    assert.equal(longPreview.sectionCount, 70);
+    const longImported = await call(app, `confirmImport(${JSON.stringify(makeMetadata(longPreview))})`);
+    assert.equal((await call(app, `listSections(${JSON.stringify(longImported.id)}, 50)`)).length, 20);
+    const longSearch = await call(app, `search(${JSON.stringify(longImported.id)}, '独有检索词')`);
+    assert.equal(longSearch.hits[0].position, 69);
+    const located = await call(app, `getSection(${JSON.stringify(longImported.id)}, 69, ${longSearch.hits[0].matchOffset - 80})`);
+    assert(located.content.includes('独有检索词'));
+    console.log('通过：长资料的后续目录、全文分段和搜索定位');
     const ids = [];
     for (const sample of samples) ids.push(await checkFile(app, sample));
 
@@ -223,19 +239,31 @@ async function main() {
     app = null;
     app = await launch(profile);
     const list = await call(app, 'list()');
-    assert.equal(list.length, samples.length);
+    assert.equal(list.length, samples.length + 1);
     for (let index = 0; index < samples.length; index += 1) {
       const reopened = await call(app, `get(${JSON.stringify(ids[index])})`);
       assert.equal(reopened.format, samples[index].format);
-      assert(reopened.sections.some((item) => item.content.includes(samples[index].text)));
+      const section = await call(app, `getSection(${JSON.stringify(ids[index])}, 0, 0)`);
+      assert(section.content.includes(samples[index].text));
     }
+    assert.equal((await call(app, `search(${JSON.stringify(longImported.id)}, '独有检索词')`)).hits[0].position, 69);
     console.log('通过：重启 EXE 后四种格式仍可读取');
     await waitForUi(app, "Boolean(document.querySelector('.document-library-launch'))");
     await app.renderer.evaluate("document.querySelector('.document-library-launch').click(); true");
-    await waitForUi(app, "document.querySelectorAll('.document-list li').length === 4");
+    await waitForUi(app, "document.querySelectorAll('.document-list li').length === 5");
     await app.renderer.evaluate("document.querySelector('.document-list li button').click(); true");
     await waitForUi(app, "document.querySelector('.document-reader pre')?.textContent?.includes('模型从数据中学习规律') === true");
-    console.log('通过：正式界面可打开重启后的资料正文');
+    await app.renderer.evaluate(`(() => {
+      const input = document.getElementById('document-search-input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '模型');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+    await waitForUi(app, "document.querySelector('.document-reader-search button')?.disabled === false");
+    await app.renderer.evaluate("document.querySelector('.document-reader-search button').click(); true");
+    await waitForUi(app, "document.querySelector('.document-search-results')?.textContent?.includes('匹配章节') === true");
+    await waitForUi(app, "document.querySelector('.document-reader mark')?.textContent === '模型'");
+    console.log('通过：正式界面可打开正文并搜索定位');
   } finally {
     await stop(app);
     // Delete only the unique directory created by this run, never a user profile.

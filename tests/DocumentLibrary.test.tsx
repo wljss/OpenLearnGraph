@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   DocumentPreviewView,
+  DocumentSectionView,
   ImportedDocumentView,
   OpenLearnGraphApi,
 } from '../src/shared/contracts';
@@ -53,13 +54,33 @@ const imported: ImportedDocumentView = {
   importedAt: '2026-01-02T00:00:00.000Z',
   modifiedAt: preview.modifiedAt,
   warnings: preview.warnings,
-  sections: preview.sections,
+};
+
+const firstSection: DocumentSectionView = {
+  position: 0,
+  heading: '第一章',
+  locator: '第 1–5 行',
+  charCount: 8,
+  content: '第一章的正文。',
+  startOffset: 0,
+  endOffset: 8,
+  totalLength: 8,
+  previousOffset: null,
+  nextOffset: null,
 };
 
 function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): OpenLearnGraphApi['documents'] {
   const documents: OpenLearnGraphApi['documents'] = {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue(imported),
+    listSections: vi.fn().mockResolvedValue([
+      { position: 0, heading: '第一章', locator: '第 1–5 行', charCount: 8 },
+      { position: 1, heading: '第二章', locator: '第 6–10 行', charCount: 8 },
+    ]),
+    getSection: vi.fn().mockImplementation(async (_id: string, position: number) => (
+      position === 0 ? firstSection : { ...firstSection, position: 1, heading: '第二章', locator: '第 6–10 行', content: '第二章的正文。' }
+    )),
+    search: vi.fn().mockResolvedValue({ hits: [], hasMore: false }),
     chooseFile: vi.fn().mockResolvedValue(preview),
     confirmImport: vi.fn().mockResolvedValue(imported),
     discardPreview: vi.fn().mockResolvedValue(undefined),
@@ -130,7 +151,7 @@ describe('DocumentLibrary', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('explains chapter and text limits without implying that stored content was discarded', async () => {
+  it('explains import preview limits and provides paging for the saved full text', async () => {
     const limitedPreview: DocumentPreviewView = {
       ...preview,
       sectionCount: 13,
@@ -141,22 +162,96 @@ describe('DocumentLibrary', () => {
     };
     const limitedDetail: ImportedDocumentView = {
       ...imported,
-      sectionCount: 51,
-      sections: [{
-        position: 0, heading: '第一章', locator: '第 1 页',
-        content: '乙'.repeat(8000), charCount: 9000, truncated: true,
-      }],
+      sectionCount: 1,
+    };
+    const longSection: DocumentSectionView = {
+      ...firstSection,
+      content: '乙'.repeat(24_000), charCount: 26_000,
+      endOffset: 24_000, totalLength: 26_000, nextOffset: 24_000,
     };
     installApi({
       chooseFile: vi.fn().mockResolvedValue(limitedPreview),
       confirmImport: vi.fn().mockResolvedValue(limitedDetail),
+      listSections: vi.fn().mockResolvedValue([{ position: 0, heading: '第一章', locator: '第 1 页', charCount: 26_000 }]),
+      getSection: vi.fn().mockImplementation(async (_id: string, _position: number, offset: number) => (
+        offset === 0 ? longSection : {
+          ...longSection, content: '尾声', startOffset: 24_000, endOffset: 26_000,
+          previousOffset: 0, nextOffset: null,
+        }
+      )),
     });
     render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
     expect(await screen.findByText(/当前仅展示前 1 \/ 13 节/)).toBeVisible();
     expect(screen.getByText(/前 6,000 个字符/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '确认导入资料库' }));
-    expect(await screen.findByText(/当前仅展示前 1 \/ 51 节/)).toBeVisible();
-    expect(screen.getByText(/前 8,000 个字符/)).toBeVisible();
+    expect(await screen.findByText(/本节第 1–24,000 \/ 26,000 字符/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '下一段' }));
+    expect(await screen.findByText('尾声')).toBeVisible();
+  });
+
+  it('searches and jumps to a later chapter without loading the whole book', async () => {
+    const longDocument: ImportedDocumentView = { ...imported, title: '长资料', sectionCount: 70 };
+    const listSections = vi.fn().mockImplementation(async (_id: string, offset: number) => (
+      Array.from({ length: offset === 0 ? 50 : 20 }, (_, index) => ({
+        position: offset + index,
+        heading: `第 ${offset + index + 1} 章`,
+        locator: `第 ${offset + index + 1} 页`,
+        charCount: 100,
+      }))
+    ));
+    const getSection = vi.fn().mockImplementation(async (_id: string, position: number, offset: number) => (
+      position === 69 ? {
+        ...firstSection,
+        position,
+        heading: '第 70 章',
+        locator: '第 70 页',
+        content: '这里出现独有检索词并继续。',
+        startOffset: offset,
+        endOffset: offset + 13,
+        totalLength: 26000,
+        previousOffset: offset ? 0 : null,
+        nextOffset: null,
+      } : firstSection
+    ));
+    const documents = installApi({
+      list: vi.fn().mockResolvedValue([longDocument]),
+      get: vi.fn().mockResolvedValue(longDocument),
+      listSections,
+      getSection,
+      search: vi.fn().mockResolvedValue({
+        hits: [{ position: 69, heading: '第 70 章', locator: '第 70 页', charCount: 100, excerpt: '……独有检索词……', matchOffset: 25_000 }],
+        hasMore: false,
+      }),
+    });
+    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /长资料/ }));
+    expect(await screen.findByText('章节目录 · 50 / 70')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('搜索正文'), { target: { value: '独有检索词' } });
+    fireEvent.click(screen.getByRole('button', { name: '查找' }));
+    expect(await screen.findByText('匹配章节 · 1')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /第 70 章.*独有检索词/ }));
+    await waitFor(() => expect(getSection).toHaveBeenCalledWith(longDocument.id, 69, 24_920));
+    expect(await screen.findByText('独有检索词')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('跳到第几节'), { target: { value: '70' } });
+    fireEvent.click(screen.getByRole('button', { name: '跳转' }));
+    await waitFor(() => expect(getSection).toHaveBeenCalledWith(longDocument.id, 69, 0));
+    fireEvent.click(screen.getByRole('button', { name: '加载后续章节' }));
+    await waitFor(() => expect(listSections).toHaveBeenCalledWith(longDocument.id, 50));
+    expect(await screen.findByText('章节目录 · 70 / 70')).toBeVisible();
+    expect(documents.search).toHaveBeenCalledWith(longDocument.id, '独有检索词');
+  });
+
+  it('shows a search failure inside the reader', async () => {
+    installApi({
+      list: vi.fn().mockResolvedValue([imported]),
+      search: vi.fn().mockRejectedValue(new Error('数据库暂时不可读')),
+    });
+    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /学习指南（校对版）/ }));
+    await screen.findByLabelText('搜索正文');
+    fireEvent.change(screen.getByLabelText('搜索正文'), { target: { value: '正文' } });
+    fireEvent.click(screen.getByRole('button', { name: '查找' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('资料搜索失败：数据库暂时不可读');
   });
 });

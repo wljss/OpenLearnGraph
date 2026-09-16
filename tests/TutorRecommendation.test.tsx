@@ -88,7 +88,8 @@ function installTutorApi(): OpenLearnGraphApi {
       saveAnswer: vi.fn(), complete: vi.fn(), cancel: vi.fn(),
     },
     documents: {
-      list: vi.fn(), get: vi.fn(), chooseFile: vi.fn(), confirmImport: vi.fn(),
+      list: vi.fn(), get: vi.fn(), listSections: vi.fn(), getSection: vi.fn(),
+      search: vi.fn(), chooseFile: vi.fn(), confirmImport: vi.fn(),
       discardPreview: vi.fn(), delete: vi.fn(),
     },
     lifecycle: { setUnsavedChanges: vi.fn() },

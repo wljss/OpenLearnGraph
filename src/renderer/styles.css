@@ -483,12 +483,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .document-reader li button.active { color: #2f6658; border-color: #bcd3cc; background: #eaf4f1; }
 .document-reader li button span { overflow: hidden; width: 100%; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .document-reader li button small { color: #8a9793; font-size: 11px; }
+.document-reader-search, .document-jump { margin: 0 6px 14px; }
+.document-reader-error { margin: 0 6px 12px; padding: 8px; color: #8a403d; border: 1px solid #e4b9b5; border-radius: 6px; background: #fff4f2; font-size: 11px; line-height: 1.5; }
+.document-reader-search label, .document-jump label { display: block; margin-bottom: 6px; color: #5d716a; font-size: 12px; font-weight: 700; }
+.document-reader-search > div, .document-jump > div { display: flex; gap: 6px; }
+.document-reader-search input, .document-jump input { min-width: 0; width: 100%; padding: 7px 8px; color: #344a42; border: 1px solid #cfdbd7; border-radius: 6px; background: #fff; font-size: 12px; }
+.document-reader-search button, .document-jump button, .document-load-more { flex: 0 0 auto; padding: 7px 10px; color: #2f6658; border: 1px solid #b9d1c9; border-radius: 6px; background: #edf6f3; font-size: 11px; font-weight: 700; }
+.document-reader-search button:hover:not(:disabled), .document-jump button:hover:not(:disabled), .document-load-more:hover:not(:disabled) { background: #dceee8; }
+.document-reader-search button:disabled, .document-load-more:disabled { opacity: .55; cursor: not-allowed; }
+.document-search-results { margin: 0 6px 15px; padding: 10px; border: 1px solid #d8e6df; border-radius: 8px; background: #f3f8f5; }
+.document-search-results > strong { display: block; margin-bottom: 8px; color: #385d51; font-size: 12px; }
+.document-search-results ol { max-height: 210px; overflow-y: auto; }
+.document-search-results li button { background: #fff; }
+.document-search-results li button small { display: -webkit-box; overflow: hidden; width: 100%; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.4; overflow-wrap: anywhere; }
+.document-search-results p { margin: 8px 0 0; color: #687e74; font-size: 11px; line-height: 1.5; }
+.document-load-more { width: calc(100% - 12px); margin: 10px 6px 0; }
 .document-reader > article { min-height: 0; padding: 18px 26px 24px; overflow-y: auto; background: #fff; }
 .document-reader article header { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid #e5eae8; }
 .document-reader article header span { color: #8c9995; font-size: 11px; }
 .document-reader article header strong { color: #31483f; font-size: 15px; }
 .document-reader pre { margin: 16px 0 0; color: #3f504b; font-family: inherit; font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.document-reader pre mark { color: #3e391a; border-radius: 2px; background: #ffdc78; }
 .document-reader article > p { color: #8b6f44; font-size: 11px; }
+.document-chunk-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 12px 0; border-top: 1px solid #e2eae6; color: #667b72; font-size: 11px; }
+.document-chunk-navigation > div { display: flex; gap: 8px; }
+.document-chunk-navigation button { padding: 6px 10px; color: #2f6658; border: 1px solid #b9d1c9; border-radius: 6px; background: #fff; font-size: 11px; }
+.document-chunk-navigation button:disabled { opacity: .45; cursor: not-allowed; }
 .document-no-text { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 40px; color: #7b8985; text-align: center; }
 .document-no-text strong { color: #8a4642; font-size: 14px; }
 .document-no-text p { font-size: 12px; }

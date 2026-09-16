@@ -61,7 +61,9 @@ M6A 的文件选择、读取、散列和解析只在 main 执行。renderer 只�
 
 PDF.js 的主模块在 Vite 主进程构建中会变成独立代码块，因此 `vite.main.config.mts` 明确把匹配版本的 `pdf.worker.mjs` 输出到同一目录，提取器以文件 URL 指向该构建产物。升级 PDF.js 或更改打包配置时，必须在正式 EXE 中执行一次 PDF 提取预览，不能只依赖源码单元测试。
 
-`npm.cmd run smoke:documents` 在隔离临时资料库中启动正式 EXE，经真实 preload/IPC/main/SQLite 路径检查 PDF、EPUB、Markdown、TXT 的预览、确认、重复拦截、异常反馈、重启读取及资料库界面打开；用 loopback DevTools 临时替换系统文件选择器，不向生产应用添加测试专用接口。其样本是合成样本，复杂中文 PDF/EPUB 仍须用授权的真实资料进行人工核对。
+已导入资料的详情接口只返回元数据；章节目录、正文和关键词搜索分别走明确命名、经 Zod 验证的 IPC。目录每次返回 50 条，正文每次从指定字符位置读取最多 24,000 个字符，搜索按正文中的字面子串返回前 50 个匹配章节及其位置。这样旧资料无需迁移即可读到全部正文，也不会把整本书一次发送到 renderer。搜索命中可定位到对应 PDF 页码或 EPUB 章节文件与正文位置。
+
+`npm.cmd run smoke:documents` 在隔离临时资料库中启动正式 EXE，经真实 preload/IPC/main/SQLite 路径检查 PDF、EPUB、Markdown、TXT 的预览、确认、重复拦截、异常反馈、重启读取、长资料定位及资料库界面打开；用 loopback DevTools 临时替换系统文件选择器，不向生产应用添加测试专用接口。其样本是合成样本，复杂中文 PDF/EPUB 仍须用授权的真实资料进行人工核对。
 
 ## Windows 分发（ADR-004）
 

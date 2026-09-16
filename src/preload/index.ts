@@ -67,6 +67,9 @@ const api: OpenLearnGraphApi = {
   documents: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.documentList),
     get: (documentId: string) => ipcRenderer.invoke(IPC_CHANNELS.documentGet, documentId),
+    listSections: (documentId: string, offset: number) => ipcRenderer.invoke(IPC_CHANNELS.documentSectionList, documentId, offset),
+    getSection: (documentId: string, position: number, offset: number) => ipcRenderer.invoke(IPC_CHANNELS.documentSectionGet, documentId, position, offset),
+    search: (documentId: string, query: string) => ipcRenderer.invoke(IPC_CHANNELS.documentSearch, documentId, query),
     chooseFile: () => ipcRenderer.invoke(IPC_CHANNELS.documentChoose),
     confirmImport: (input: ConfirmDocumentImportInput) => ipcRenderer.invoke(IPC_CHANNELS.documentImportConfirm, input),
     discardPreview: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.documentPreviewDiscard, previewToken),
