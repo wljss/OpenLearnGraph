@@ -19,6 +19,7 @@ interface EvidenceRow {
   score_possible: number | null;
   assessment_attempt_id: string | null;
   learning_session_id: string | null;
+  practice_attempt_id: string | null;
 }
 
 interface StateRow {
@@ -41,6 +42,7 @@ function toView(row: EvidenceRow): LearningEvidenceView {
     scorePossible: row.score_possible,
     assessmentAttemptId: row.assessment_attempt_id,
     learningSessionId: row.learning_session_id,
+    practiceAttemptId: row.practice_attempt_id,
   };
 }
 
@@ -57,7 +59,7 @@ export class LearningRepository {
   listEvidence(nodeId: string): LearningEvidenceView[] {
     const rows = this.database.prepare(
       `SELECT id, node_id, kind, rating, note, occurred_at,
-              score_earned, score_possible, assessment_attempt_id, learning_session_id
+              score_earned, score_possible, assessment_attempt_id, learning_session_id, practice_attempt_id
        FROM learning_evidence
        WHERE node_id = ?
        ORDER BY occurred_at DESC, rowid DESC`,
@@ -122,6 +124,7 @@ export class LearningRepository {
       scorePossible: null,
       assessmentAttemptId: null,
       learningSessionId: null,
+      practiceAttemptId: null,
     };
   }
 }

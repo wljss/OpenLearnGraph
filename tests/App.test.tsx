@@ -20,9 +20,11 @@ const firstGraph: KnowledgeGraphDocument = {
     evidenceCount: 0,
     lastEvidenceAt: null,
     latestEvidenceKind: null,
+    mostRecentEvidenceKind: null,
     latestEvidenceScoreEarned: null,
     latestEvidenceScorePossible: null,
     diagnosticQuestionCount: 0,
+    practiceQuestionCount: 0,
   }],
   edges: [],
 };
@@ -54,9 +56,11 @@ function savedDocument(input: SaveGraphInput): KnowledgeGraphDocument {
       evidenceCount: 0,
       lastEvidenceAt: null,
       latestEvidenceKind: null,
+      mostRecentEvidenceKind: null,
       latestEvidenceScoreEarned: null,
       latestEvidenceScorePossible: null,
       diagnosticQuestionCount: 0,
+      practiceQuestionCount: 0,
     })),
     edges: input.edges.map((edge) => ({ ...edge, graphId: input.id })),
   };
@@ -98,6 +102,15 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       get: vi.fn(),
       start: vi.fn(),
       saveDraft: vi.fn(),
+      complete: vi.fn(),
+      cancel: vi.fn(),
+    },
+    practice: {
+      list: vi.fn().mockResolvedValue([]),
+      getActive: vi.fn().mockResolvedValue(null),
+      get: vi.fn(),
+      start: vi.fn(),
+      saveAnswer: vi.fn(),
       complete: vi.fn(),
       cancel: vi.fn(),
     },
@@ -254,6 +267,7 @@ describe('renderer user flows', () => {
       scorePossible: null,
       assessmentAttemptId: null,
       learningSessionId: null,
+      practiceAttemptId: null,
     };
     const masteredGraph: KnowledgeGraphDocument = {
       ...firstGraph,

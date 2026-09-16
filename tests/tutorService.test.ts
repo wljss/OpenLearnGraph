@@ -10,6 +10,7 @@ import { GraphRepository } from '../src/main/repositories/graphRepository';
 import { LearningRepository } from '../src/main/repositories/learningRepository';
 import { TutorRepository } from '../src/main/repositories/tutorRepository';
 import { SessionRepository } from '../src/main/repositories/sessionRepository';
+import { PracticeRepository } from '../src/main/repositories/practiceRepository';
 import { AssessmentService } from '../src/main/services/assessmentService';
 import { GraphService } from '../src/main/services/graphService';
 import { LearningService } from '../src/main/services/learningService';
@@ -28,6 +29,7 @@ function installServices(targetDatabase: DatabaseSync): void {
   const learningRepository = new LearningRepository(targetDatabase);
   const assessmentRepository = new AssessmentRepository(targetDatabase);
   const sessionRepository = new SessionRepository(targetDatabase);
+  const practiceRepository = new PracticeRepository(targetDatabase);
   graphService = new GraphService(graphRepository);
   learningService = new LearningService(learningRepository, graphRepository);
   assessmentService = new AssessmentService(assessmentRepository, graphRepository, learningRepository);
@@ -36,6 +38,7 @@ function installServices(targetDatabase: DatabaseSync): void {
     graphRepository,
     assessmentRepository,
     sessionRepository,
+    practiceRepository,
   );
 }
 
@@ -70,6 +73,7 @@ function addQuestion(prompt: string): void {
     nodeId: sourceId,
     prompt,
     explanation: `${prompt}解析`,
+    purpose: 'BOTH',
     options: [
       { text: '正确答案', isCorrect: true },
       { text: '错误答案', isCorrect: false },
@@ -103,7 +107,7 @@ describe('tutor decision engine', () => {
     expect(() => tutorService.respondDecision({ decisionId: initial.id, response: 'DISMISSED' }))
       .toThrow('学习状态已经改变');
     const next = tutorService.getRecommendation(graphId);
-    expect(next).toMatchObject({ action: 'PRACTICE', targetNodeId: sourceId });
+    expect(next).toMatchObject({ action: 'TEACH', targetNodeId: sourceId });
     expect(tutorService.listDecisions(graphId)).toEqual([
       expect.objectContaining({ id: next?.id, isStale: false }),
       expect.objectContaining({ id: initial.id, response: 'ACCEPTED', isStale: true }),

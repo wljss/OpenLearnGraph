@@ -5,8 +5,10 @@ export const NODE_STATUSES = ['LOCKED', 'AVAILABLE', 'LEARNING', 'MASTERED', 'RE
 export type NodeStatus = (typeof NODE_STATUSES)[number];
 export const LEARNING_PHASES = ['NOT_STARTED', 'LEARNING', 'MASTERED'] as const;
 export type LearningPhase = (typeof LEARNING_PHASES)[number];
-export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT', 'LEARNING_SESSION_COMPLETED'] as const;
+export const EVIDENCE_KINDS = ['STUDY_STARTED', 'SELF_ASSESSMENT', 'DIAGNOSTIC_RESULT', 'LEARNING_SESSION_COMPLETED', 'PRACTICE_RESULT'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
+export const QUESTION_PURPOSES = ['DIAGNOSTIC', 'PRACTICE', 'BOTH'] as const;
+export type QuestionPurpose = (typeof QUESTION_PURPOSES)[number];
 export type SelfAssessmentRating = 1 | 2 | 3 | 4 | 5;
 export const TUTOR_ACTIONS = ['TEACH', 'ASSESS', 'PRACTICE', 'REVIEW', 'REMEDIATE', 'ADVANCE'] as const;
 export type TutorAction = (typeof TUTOR_ACTIONS)[number];
@@ -22,6 +24,7 @@ export const TUTOR_REASON_CODES = [
   'REVIEW_COMPLETE_GRAPH',
   'REVIEW_TO_UNLOCK',
   'RESUME_LEARNING_SESSION',
+  'RESUME_PRACTICE',
 ] as const;
 export type TutorReasonCode = (typeof TUTOR_REASON_CODES)[number];
 
@@ -59,6 +62,20 @@ export const saveLearningSessionDraftInputSchema = z.object({
 export const completeLearningSessionInputSchema = z.object({
   sessionId: learningSessionIdInputSchema.shape.sessionId,
   notes: z.string().trim().min(1, '请先用自己的话写下学习总结').max(5_000, '会话笔记不能超过 5000 字'),
+});
+export const practiceAttemptIdInputSchema = z.object({
+  attemptId: z.string().uuid('练习记录 ID 无效'),
+});
+export const startPracticeInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  nodeId: nodeIdInputSchema.shape.nodeId,
+  mode: z.enum(['PRACTICE', 'REMEDIATE', 'REVIEW']),
+  sourceDecisionId: tutorDecisionIdInputSchema.shape.decisionId.optional(),
+});
+export const savePracticeAnswerInputSchema = z.object({
+  attemptId: practiceAttemptIdInputSchema.shape.attemptId,
+  attemptQuestionId: z.string().uuid('练习题目 ID 无效'),
+  selectedOptionId: z.string().uuid('答案选项 ID 无效').nullable(),
 });
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
@@ -113,6 +130,7 @@ export const saveAssessmentQuestionInputSchema = z.object({
   nodeId: nodeIdInputSchema.shape.nodeId,
   prompt: z.string().trim().min(1, '题目内容不能为空').max(2_000, '题目内容不能超过 2000 字'),
   explanation: z.string().trim().max(5_000, '答案解析不能超过 5000 字'),
+  purpose: z.enum(QUESTION_PURPOSES).optional(),
   options: z.array(assessmentQuestionOptionInputSchema)
     .min(2, '每道题至少需要 2 个选项')
     .max(6, '每道题最多只能有 6 个选项'),
@@ -175,6 +193,8 @@ export type RespondTutorDecisionInput = z.infer<typeof respondTutorDecisionInput
 export type StartLearningSessionInput = z.infer<typeof startLearningSessionInputSchema>;
 export type SaveLearningSessionDraftInput = z.infer<typeof saveLearningSessionDraftInputSchema>;
 export type CompleteLearningSessionInput = z.infer<typeof completeLearningSessionInputSchema>;
+export type StartPracticeInput = z.infer<typeof startPracticeInputSchema>;
+export type SavePracticeAnswerInput = z.infer<typeof savePracticeAnswerInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -182,9 +202,11 @@ export interface KnowledgeNodeView {
   learningPhase: LearningPhase; statusReason: string;
   evidenceCount: number; lastEvidenceAt: string | null;
   latestEvidenceKind: EvidenceKind | null;
+  mostRecentEvidenceKind: EvidenceKind | null;
   latestEvidenceScoreEarned: number | null;
   latestEvidenceScorePossible: number | null;
   diagnosticQuestionCount: number;
+  practiceQuestionCount: number;
 }
 export interface KnowledgeEdgeView {
   id: string; graphId: string; sourceNodeId: string; targetNodeId: string;
@@ -204,6 +226,7 @@ export interface LearningEvidenceView {
   scorePossible: number | null;
   assessmentAttemptId: string | null;
   learningSessionId: string | null;
+  practiceAttemptId: string | null;
 }
 export interface RecordLearningEvidenceResult {
   graph: KnowledgeGraphDocument;
@@ -219,6 +242,7 @@ export interface AssessmentQuestionView {
   nodeId: string;
   prompt: string;
   explanation: string;
+  purpose: QuestionPurpose;
   options: AssessmentQuestionOptionView[];
   createdAt: string;
   updatedAt: string;
@@ -292,6 +316,7 @@ export interface CompleteDiagnosticResult extends DiagnosticReviewView {
 export interface TutorDecisionContext {
   attemptId?: string;
   sessionId?: string;
+  practiceAttemptId?: string;
 }
 export type LearningSessionAction = 'TEACH' | 'ADVANCE';
 export type LearningSessionStatus = 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -318,6 +343,54 @@ export interface LearningSessionView {
 }
 export interface CompleteLearningSessionResult {
   session: LearningSessionView;
+  evidence: LearningEvidenceView;
+  graph: KnowledgeGraphDocument;
+}
+export type PracticeMode = 'PRACTICE' | 'REMEDIATE' | 'REVIEW';
+export type PracticeAttemptStatus = 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export interface PracticeQuestionView {
+  attemptQuestionId: string;
+  prompt: string;
+  options: DiagnosticQuestionOptionView[];
+}
+export interface PracticeAnswerFeedbackView {
+  attemptQuestionId: string;
+  selectedOptionId: string | null;
+  selectedOptionText: string | null;
+  correctOptionId: string;
+  correctOptionText: string;
+  explanation: string;
+  isCorrect: boolean;
+}
+export interface PracticeAttemptView {
+  id: string;
+  graphId: string;
+  nodeId: string | null;
+  nodeName: string;
+  mode: PracticeMode;
+  status: PracticeAttemptStatus;
+  sourceDecisionId: string | null;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  questions: PracticeQuestionView[];
+  answers: PracticeAnswerFeedbackView[];
+}
+export interface PracticeAttemptSummaryView {
+  id: string;
+  graphId: string;
+  nodeId: string | null;
+  nodeName: string;
+  mode: PracticeMode;
+  status: PracticeAttemptStatus;
+  startedAt: string;
+  completedAt: string | null;
+  questionCount: number;
+  answeredCount: number;
+  correctCount: number | null;
+}
+export interface CompletePracticeResult {
+  attempt: PracticeAttemptView;
   evidence: LearningEvidenceView;
   graph: KnowledgeGraphDocument;
 }
@@ -374,6 +447,15 @@ export interface OpenLearnGraphApi {
     complete(input: CompleteLearningSessionInput): Promise<CompleteLearningSessionResult>;
     cancel(sessionId: string): Promise<LearningSessionView>;
   };
+  practice: {
+    list(graphId: string): Promise<PracticeAttemptSummaryView[]>;
+    getActive(graphId: string): Promise<PracticeAttemptView | null>;
+    get(attemptId: string): Promise<PracticeAttemptView>;
+    start(input: StartPracticeInput): Promise<PracticeAttemptView>;
+    saveAnswer(input: SavePracticeAnswerInput): Promise<PracticeAnswerFeedbackView>;
+    complete(attemptId: string): Promise<CompletePracticeResult>;
+    cancel(attemptId: string): Promise<PracticeAttemptView>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -392,5 +474,9 @@ export const IPC_CHANNELS = {
   learningSessionGet: 'session:get', learningSessionStart: 'session:start',
   learningSessionDraftSave: 'session:draft-save', learningSessionComplete: 'session:complete',
   learningSessionCancel: 'session:cancel',
+  practiceAttemptList: 'practice:list', practiceAttemptActiveGet: 'practice:active-get',
+  practiceAttemptGet: 'practice:get', practiceAttemptStart: 'practice:start',
+  practiceAnswerSave: 'practice:answer-save', practiceAttemptComplete: 'practice:complete',
+  practiceAttemptCancel: 'practice:cancel',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

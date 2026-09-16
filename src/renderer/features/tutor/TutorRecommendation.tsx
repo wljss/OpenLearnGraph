@@ -27,6 +27,9 @@ function actionCopy(decision: TutorDecisionView): { label: string; cta: string }
   if (decision.reasonCode === 'RESUME_LEARNING_SESSION') {
     return { label: '继续学习', cta: '继续未完成会话' };
   }
+  if (decision.reasonCode === 'RESUME_PRACTICE') {
+    return { label: '继续练习', cta: '继续未完成练习' };
+  }
   return ACTION_COPY[decision.action];
 }
 
@@ -68,9 +71,11 @@ export function TutorRecommendation({
       node.learningPhase,
       node.evidenceCount,
       node.latestEvidenceKind,
+      node.mostRecentEvidenceKind,
       node.latestEvidenceScoreEarned,
       node.latestEvidenceScorePossible,
       node.diagnosticQuestionCount,
+      node.practiceQuestionCount,
     ]),
     edges: graph.edges.map((edge) => [edge.sourceNodeId, edge.targetNodeId]),
     refreshToken,
@@ -154,7 +159,7 @@ export function TutorRecommendation({
     return (
       <section className="tutor-recommendation tutor-empty" aria-label="下一步学习建议">
         <span className="tutor-mark" aria-hidden="true">◎</span>
-        <div><strong>添加概念后，我会在这里给出下一步建议</strong><p>建议完全由本机规则和你的学习证据生成。</p></div>
+        <div><strong>{graph.nodes.length ? '当前没有可直接执行的建议' : '添加概念后，我会在这里给出下一步建议'}</strong><p>{graph.nodes.length ? '可以为已掌握概念补充练习题，或继续完善图谱。' : '建议完全由本机规则和你的学习证据生成。'}</p></div>
       </section>
     );
   }

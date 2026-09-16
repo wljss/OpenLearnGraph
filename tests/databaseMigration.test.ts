@@ -22,18 +22,31 @@ describe('database migrations', () => {
          (id, graph_id, name, description, position_x, position_y, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, '旧版概念', '', 10, 20, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
-      oldDatabase.exec('DROP TABLE learning_sessions; DROP TABLE tutor_decisions; DROP TABLE learner_node_states; DROP TABLE learning_evidence; PRAGMA user_version = 1;');
+      oldDatabase.exec(`
+        DROP TABLE learner_node_states;
+        DROP TABLE learning_evidence;
+        DROP TABLE practice_responses;
+        DROP TABLE practice_attempt_questions;
+        DROP TABLE practice_attempts;
+        DROP TABLE learning_sessions;
+        DROP TABLE tutor_decisions;
+        ALTER TABLE assessment_questions DROP COLUMN purpose;
+        PRAGMA user_version = 1;
+      `);
       oldDatabase.close();
 
       const upgraded = openDatabase(filePath);
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
-      expect(version.user_version).toBe(5);
+      expect(version.user_version).toBe(6);
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tutor_decisions'",
       ).get()).toBeTruthy();
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'learning_sessions'",
+      ).get()).toBeTruthy();
+      expect(upgraded.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'practice_attempts'",
       ).get()).toBeTruthy();
       expect(restored?.nodes[0]).toMatchObject({ name: '旧版概念', status: 'AVAILABLE', evidenceCount: 0 });
       upgraded.close();
@@ -61,10 +74,13 @@ describe('database migrations', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, 'M2 概念', '', 10, 20, occurredAt, occurredAt);
       oldDatabase.exec(`
-        DROP TABLE learning_sessions;
-        DROP TABLE tutor_decisions;
         DROP TABLE learner_node_states;
         DROP TABLE learning_evidence;
+        DROP TABLE practice_responses;
+        DROP TABLE practice_attempt_questions;
+        DROP TABLE practice_attempts;
+        DROP TABLE learning_sessions;
+        DROP TABLE tutor_decisions;
         DROP TABLE assessment_responses;
         DROP TABLE assessment_attempt_questions;
         DROP TABLE assessment_attempts;
@@ -105,10 +121,10 @@ describe('database migrations', () => {
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
       const evidence = upgraded.prepare(
-        `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id, learning_session_id
+        `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id, learning_session_id, practice_attempt_id
          FROM learning_evidence WHERE id = ?`,
       ).get(evidenceId);
-      expect(version.user_version).toBe(5);
+      expect(version.user_version).toBe(6);
       expect(restored?.nodes[0]).toMatchObject({ status: 'MASTERED', evidenceCount: 1, diagnosticQuestionCount: 0 });
       expect(evidence).toMatchObject({
         kind: 'SELF_ASSESSMENT',
@@ -118,6 +134,7 @@ describe('database migrations', () => {
         score_possible: null,
         assessment_attempt_id: null,
         learning_session_id: null,
+        practice_attempt_id: null,
       });
     } finally {
       upgraded?.close();

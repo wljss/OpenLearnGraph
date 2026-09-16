@@ -8,9 +8,11 @@ import {
   saveAssessmentQuestionInputSchema,
   saveDiagnosticAnswerInputSchema,
   saveLearningSessionDraftInputSchema,
+  savePracticeAnswerInputSchema,
   saveGraphInputSchema,
   startDiagnosticInputSchema,
   startLearningSessionInputSchema,
+  startPracticeInputSchema,
 } from '../src/shared/contracts';
 
 const graphId = '11111111-1111-4111-8111-111111111111';
@@ -85,6 +87,8 @@ describe('diagnostic assessment schemas', () => {
 
   it('accepts a single-choice question with exactly one correct option', () => {
     expect(saveAssessmentQuestionInputSchema.safeParse(question).success).toBe(true);
+    expect(saveAssessmentQuestionInputSchema.safeParse({ ...question, purpose: 'BOTH' }).success).toBe(true);
+    expect(saveAssessmentQuestionInputSchema.safeParse({ ...question, purpose: 'QUIZ' }).success).toBe(false);
   });
 
   it('rejects missing, multiple and duplicate answers', () => {
@@ -118,6 +122,29 @@ describe('diagnostic assessment schemas', () => {
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, secondNodeId] }).success).toBe(true);
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [] }).success).toBe(false);
     expect(startDiagnosticInputSchema.safeParse({ graphId, nodeIds: [firstNodeId, firstNodeId] }).success).toBe(false);
+  });
+});
+
+describe('practice schemas', () => {
+  const attemptId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const attemptQuestionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  it('accepts bounded practice modes and explicit unknown answers', () => {
+    expect(startPracticeInputSchema.safeParse({
+      graphId,
+      nodeId: firstNodeId,
+      mode: 'REMEDIATE',
+    }).success).toBe(true);
+    expect(startPracticeInputSchema.safeParse({
+      graphId,
+      nodeId: firstNodeId,
+      mode: 'ASSESS',
+    }).success).toBe(false);
+    expect(savePracticeAnswerInputSchema.safeParse({
+      attemptId,
+      attemptQuestionId,
+      selectedOptionId: null,
+    }).success).toBe(true);
   });
 });
 

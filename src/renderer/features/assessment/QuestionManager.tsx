@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AssessmentQuestionView, KnowledgeNodeView } from '../../../shared/contracts';
+import type { AssessmentQuestionView, KnowledgeNodeView, QuestionPurpose } from '../../../shared/contracts';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { errorMessage } from '../../errorMessage';
 
 interface QuestionManagerProps {
   node: KnowledgeNodeView;
   onClose: () => void;
-  onQuestionCountChange: (nodeId: string, count: number) => void;
+  onQuestionCountsChange: (nodeId: string, diagnosticCount: number, practiceCount: number) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
 
@@ -29,7 +29,7 @@ function blankOptions(): EditableOption[] {
 export function QuestionManager({
   node,
   onClose,
-  onQuestionCountChange,
+  onQuestionCountsChange,
   onMessage,
 }: QuestionManagerProps): React.JSX.Element {
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -39,6 +39,7 @@ export function QuestionManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [explanation, setExplanation] = useState('');
+  const [purpose, setPurpose] = useState<QuestionPurpose>('DIAGNOSTIC');
   const [options, setOptions] = useState<EditableOption[]>(blankOptions);
   const [formTouched, setFormTouched] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -47,6 +48,7 @@ export function QuestionManager({
     setEditingId(null);
     setPrompt('');
     setExplanation('');
+    setPurpose('DIAGNOSTIC');
     setOptions(blankOptions());
     setFormTouched(false);
     queueMicrotask(() => promptRef.current?.focus());
@@ -57,14 +59,18 @@ export function QuestionManager({
     void window.openLearnGraph.assessments.listQuestions(node.id).then((items) => {
       if (!active) return;
       setQuestions(items);
-      onQuestionCountChange(node.id, items.length);
+      onQuestionCountsChange(
+        node.id,
+        items.filter((item) => item.purpose !== 'PRACTICE').length,
+        items.filter((item) => item.purpose !== 'DIAGNOSTIC').length,
+      );
     }).catch((error: unknown) => {
-      if (active) onMessage(`诊断题加载失败：${errorMessage(error)}`, 'error');
+      if (active) onMessage(`题库加载失败：${errorMessage(error)}`, 'error');
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [node.id, onMessage, onQuestionCountChange]);
+  }, [node.id, onMessage, onQuestionCountsChange]);
 
   useEffect(() => {
     promptRef.current?.focus();
@@ -91,6 +97,7 @@ export function QuestionManager({
     setEditingId(question.id);
     setPrompt(question.prompt);
     setExplanation(question.explanation);
+    setPurpose(question.purpose);
     setOptions(question.options.map((option) => ({
       key: option.id,
       text: option.text,
@@ -123,17 +130,22 @@ export function QuestionManager({
         nodeId: node.id,
         prompt,
         explanation,
+        purpose,
         options: options.map((option) => ({ text: option.text, isCorrect: option.isCorrect })),
       });
       const next = editingId
         ? questions.map((question) => question.id === saved.id ? saved : question)
         : [...questions, saved];
       setQuestions(next);
-      onQuestionCountChange(node.id, next.length);
-      onMessage(editingId ? '诊断题已更新。旧作答仍保留原题快照。' : '诊断题已保存到本机。', 'success');
+      onQuestionCountsChange(
+        node.id,
+        next.filter((item) => item.purpose !== 'PRACTICE').length,
+        next.filter((item) => item.purpose !== 'DIAGNOSTIC').length,
+      );
+      onMessage(editingId ? '题目已更新。旧作答仍保留原题快照。' : '题目已保存到本机。', 'success');
       resetForm();
     } catch (error) {
-      onMessage(`诊断题保存失败：${errorMessage(error)}`, 'error');
+      onMessage(`题目保存失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -146,11 +158,15 @@ export function QuestionManager({
       await window.openLearnGraph.assessments.deleteQuestion(question.id);
       const next = questions.filter((item) => item.id !== question.id);
       setQuestions(next);
-      onQuestionCountChange(node.id, next.length);
+      onQuestionCountsChange(
+        node.id,
+        next.filter((item) => item.purpose !== 'PRACTICE').length,
+        next.filter((item) => item.purpose !== 'DIAGNOSTIC').length,
+      );
       if (editingId === question.id) resetForm();
-      onMessage('诊断题已删除；既有作答快照不受影响。', 'success');
+      onMessage('题目已删除；既有练习和诊断快照不受影响。', 'success');
     } catch (error) {
-      onMessage(`诊断题删除失败：${errorMessage(error)}`, 'error');
+      onMessage(`题目删除失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -175,15 +191,15 @@ export function QuestionManager({
       >
         <header className="assessment-modal-header">
           <div>
-            <span className="modal-kicker">诊断题库</span>
+            <span className="modal-kicker">本地题库</span>
             <h2 id="question-manager-title">{node.name}</h2>
-            <p>至少准备 2 道题后，这个概念才会进入图谱诊断。</p>
+            <p>练习题提供即时反馈；诊断题只在提交后揭示答案。</p>
           </div>
-          <button className="modal-close" type="button" aria-label="关闭诊断题库" disabled={busy} onClick={requestClose}>×</button>
+          <button className="modal-close" type="button" aria-label="关闭题库" disabled={busy} onClick={requestClose}>×</button>
         </header>
 
         <div className="question-manager-body">
-          <aside className="question-list-panel" aria-label="已有诊断题">
+          <aside className="question-list-panel" aria-label="已有题目">
             <div className="question-list-heading">
               <strong>已有题目</strong><span>{questions.length} 道</span>
             </div>
@@ -192,7 +208,7 @@ export function QuestionManager({
                 {questions.map((question, index) => (
                   <li key={question.id} className={editingId === question.id ? 'active' : ''}>
                     <button type="button" disabled={busy || formTouched} onClick={() => editQuestion(question)}>
-                      <span>{index + 1}</span><strong>{question.prompt}</strong>
+                      <span>{index + 1}</span><strong>{question.prompt}<small>{question.purpose === 'BOTH' ? '通用' : question.purpose === 'PRACTICE' ? '练习' : '诊断'}</small></strong>
                     </button>
                     <button
                       className="question-delete"
@@ -230,6 +246,28 @@ export function QuestionManager({
               />
               <span className="character-count">{prompt.length}/2000</span>
             </label>
+            <fieldset className="question-purpose" disabled={busy}>
+              <legend>题目用途</legend>
+              <p>诊断题不会在作答过程中透露答案；练习题会立即反馈。</p>
+              <div>
+                {([
+                  ['DIAGNOSTIC', '仅诊断'],
+                  ['PRACTICE', '仅练习'],
+                  ['BOTH', '练习与诊断'],
+                ] as const).map(([value, label]) => (
+                  <label key={value}>
+                    <input
+                      type="radio"
+                      name="question-purpose"
+                      value={value}
+                      checked={purpose === value}
+                      onChange={() => { setPurpose(value); setFormTouched(true); }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <fieldset disabled={busy}>
               <legend>选项与正确答案</legend>
               <p>选择左侧圆点指定唯一正确答案。</p>
@@ -283,12 +321,12 @@ export function QuestionManager({
                 maxLength={5_000}
                 value={explanation}
                 disabled={busy}
-                placeholder="提交诊断后向学习者解释为什么。"
+                placeholder="练习作答后或诊断提交后，用来解释为什么。"
                 onChange={(event) => { setExplanation(event.target.value); setFormTouched(true); }}
               />
             </label>
             <button className="primary-button question-save" type="submit" disabled={busy || !valid}>
-              {busy ? '正在保存…' : editingId ? '保存题目修改' : '保存诊断题'}
+              {busy ? '正在保存…' : editingId ? '保存题目修改' : '保存题目'}
             </button>
           </form>
         </div>
@@ -317,8 +355,8 @@ export function QuestionManager({
       )}
       {confirmation && typeof confirmation === 'object' && (
         <ConfirmDialog
-          title="删除这道诊断题？"
-          description="题目会从当前题库移除；过去诊断中的题目快照和作答结果仍会保留。"
+          title="删除这道题？"
+          description="题目会从当前题库移除；过去练习和诊断中的题目快照与作答结果仍会保留。"
           confirmLabel="删除题目"
           destructive
           onCancel={() => setConfirmation(null)}

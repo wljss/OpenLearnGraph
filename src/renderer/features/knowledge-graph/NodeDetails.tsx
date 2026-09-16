@@ -20,6 +20,7 @@ interface NodeDetailsProps {
   onUpdate: (node: KnowledgeNodeView) => void;
   onDelete: (nodeId: string) => void;
   onStartLearning: (nodeId: string) => void;
+  onStartPractice: (nodeId: string) => void;
   onRecordSelfAssessment: (
     nodeId: string,
     rating: SelfAssessmentRating,
@@ -51,6 +52,7 @@ export function NodeDetails({
   onUpdate,
   onDelete,
   onStartLearning,
+  onStartPractice,
   onRecordSelfAssessment,
   onManageQuestions,
 }: NodeDetailsProps): React.JSX.Element {
@@ -139,6 +141,18 @@ export function NodeDetails({
             开始学习会话
           </button>
         )}
+        {node.status !== 'LOCKED' && node.practiceQuestionCount > 0 && (
+          <button
+            className="secondary-button learning-action practice-action"
+            type="button"
+            disabled={structureDirty || interactionBusy}
+            onClick={() => onStartPractice(node.id)}
+          >
+            {node.status === 'MASTERED'
+              ? '开始回顾练习'
+              : node.latestEvidenceKind === 'DIAGNOSTIC_RESULT' ? '开始针对性补强' : '开始练习'}
+          </button>
+        )}
         {node.status === 'AVAILABLE' && !node.description.trim() && !structureDirty && (
           <p className="learning-guidance">请先补充概念描述；学习会话不会凭空生成内容。</p>
         )}
@@ -197,8 +211,8 @@ export function NodeDetails({
 
       <section className="detail-section question-bank-card" aria-labelledby="question-bank-heading">
         <div className="section-heading-row">
-          <span className="field-label" id="question-bank-heading">诊断题库</span>
-          <span>{node.diagnosticQuestionCount} 道</span>
+          <span className="field-label" id="question-bank-heading">本地题库</span>
+          <span>诊断 {node.diagnosticQuestionCount} · 练习 {node.practiceQuestionCount}</span>
         </div>
         <p className="field-hint">
           {node.diagnosticQuestionCount >= 2
@@ -210,7 +224,7 @@ export function NodeDetails({
           type="button"
           disabled={structureDirty || interactionBusy}
           onClick={() => onManageQuestions(node.id)}
-        >管理诊断题</button>
+        >管理题库</button>
       </section>
 
       <section className="detail-section evidence-section" aria-labelledby="evidence-heading">
@@ -235,7 +249,9 @@ export function NodeDetails({
                       ? `自评 ${item.rating}/5 · ${SELF_ASSESSMENT_RATING_LABELS[item.rating as SelfAssessmentRating]}`
                       : item.kind === 'DIAGNOSTIC_RESULT'
                         ? `客观诊断 · ${item.scoreEarned}/${item.scorePossible} 题正确`
-                        : '完成学习会话'}</strong>
+                        : item.kind === 'PRACTICE_RESULT'
+                          ? `形成性练习 · ${item.scoreEarned}/${item.scorePossible} 题正确`
+                          : '完成学习会话'}</strong>
                   {item.note && <p>{item.note}</p>}
                   <time dateTime={item.occurredAt}>{formatEvidenceTime(item.occurredAt)}</time>
                 </div>
@@ -256,7 +272,7 @@ export function NodeDetails({
         {dependents.length ? <ul className="prerequisite-list">{dependents.map((item) => <li key={item.id}>{item.name} · {STATUS_LABELS[item.status]}</li>)}</ul> : <p className="field-hint">暂无后续概念</p>}
       </div>
       <button className="danger-button" type="button" disabled={interactionBusy} onClick={() => onDelete(node.id)}>
-        删除概念{connectedEdgeCount || node.evidenceCount || node.diagnosticQuestionCount ? '及关联数据' : ''}
+        删除概念{connectedEdgeCount || node.evidenceCount || node.diagnosticQuestionCount || node.practiceQuestionCount ? '及关联数据' : ''}
       </button>
     </aside>
   );

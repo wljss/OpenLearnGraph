@@ -43,11 +43,12 @@
 |---|---|---|
 | id | TEXT | UUID，主键 |
 | node_id | TEXT | 概念外键，概念删除时级联 |
-| kind | TEXT | `STUDY_STARTED`、`SELF_ASSESSMENT`、`DIAGNOSTIC_RESULT` 或 `LEARNING_SESSION_COMPLETED` |
+| kind | TEXT | `STUDY_STARTED`、`SELF_ASSESSMENT`、`DIAGNOSTIC_RESULT`、`LEARNING_SESSION_COMPLETED` 或 `PRACTICE_RESULT` |
 | rating | INTEGER / NULL | 自评为 1–5；开始学习时为空 |
-| score_earned / score_possible | INTEGER / NULL | 客观诊断中该概念的答对数与题目数 |
+| score_earned / score_possible | INTEGER / NULL | 客观诊断或形成性练习的答对数与题目数 |
 | assessment_attempt_id | TEXT / NULL | 客观诊断对应的作答尝试外键 |
 | learning_session_id | TEXT / NULL | 完成学习会话对应的会话外键 |
+| practice_attempt_id | TEXT / NULL | 完成形成性练习对应的练习外键 |
 | note | TEXT | 用户学习备注，最长 2000 字 |
 | occurred_at | TEXT | ISO-8601 证据时间 |
 
@@ -70,7 +71,7 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 
 ### assessment_questions / assessment_options
 
-题目属于知识节点，保存题干、可选解析及 2–6 个有序选项。数据库存储选项的 `is_correct`，服务边界要求每题必须且只能有一个正确答案，且选项文字不能重复。题目删除会级联删除当前选项。
+题目属于知识节点，保存题干、可选解析、`DIAGNOSTIC / PRACTICE / BOTH` 用途及 2–6 个有序选项。数据库存储选项的 `is_correct`，服务边界要求每题必须且只能有一个正确答案，且选项文字不能重复。M5B 迁移前的已有题目默认为 `DIAGNOSTIC`，不会在用户不知情时暴露于即时反馈练习。题目删除会级联删除当前选项。
 
 ### assessment_attempts
 
@@ -125,6 +126,26 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 | started_at / updated_at / completed_at | TEXT / NULL | 会话生命周期时间 |
 
 每个图谱最多有一个 `IN_PROGRESS` 学习会话，且活动诊断和活动学习会话互斥。完成操作在单个事务中写入 `LEARNING_SESSION_COMPLETED` Evidence、更新允许更新的 learner state 并结束会话。会话完成只表示完成了学习行为，不构成掌握结论；已有诊断状态和 `MASTERED` 状态不会被降级。取消会话不生成 Evidence。
+
+## M5B 形成性练习实体
+
+### practice_attempts
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id / graph_id | TEXT | UUID 主键 / 图谱外键 |
+| node_id | TEXT / NULL | 单次练习的目标概念；删除概念后置空 |
+| source_decision_id | TEXT / NULL | 可选来源 TutorDecision |
+| node_name_snapshot | TEXT | 开始时的概念名称 |
+| mode | TEXT | `PRACTICE / REMEDIATE / REVIEW` |
+| status | TEXT | `IN_PROGRESS / COMPLETED / CANCELLED` |
+| started_at / updated_at / completed_at | TEXT / NULL | 生命周期时间 |
+
+### practice_attempt_questions / practice_responses
+
+练习开始时只选择用途为 `PRACTICE` 或 `BOTH` 的题目，并复制题干、解析和带正确性标记的选项。renderer 在作答前只收到无正确性字段的选项；每次作答由 main 根据快照评分并原子写入，随后仅返回该题的正确答案和解析。已经写入的答案不可修改，同请求重试保持幂等。
+
+每个图谱最多有一个活动练习，并与活动教学和诊断互斥。全部题目作答后，完成事务写入一条 `PRACTICE_RESULT` Evidence 和正确率。形成性练习只可把未开始状态推进至 `LEARNING`，不会建立或降低 `MASTERED`，也不会覆盖 learner state 中最近一次客观诊断指针；原始 Evidence 时间线仍会展示练习结果。取消只保留作答历史，不产生 Evidence。
 
 ## 计划中的独立实体（M6+）
 

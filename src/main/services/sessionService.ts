@@ -11,6 +11,7 @@ import type { AssessmentRepository } from '../repositories/assessmentRepository'
 import type { GraphRepository } from '../repositories/graphRepository';
 import type { SessionRepository } from '../repositories/sessionRepository';
 import type { TutorRepository } from '../repositories/tutorRepository';
+import type { PracticeRepository } from '../repositories/practiceRepository';
 
 function validationError(result: { success: false; error: { issues: Array<{ message: string }> } }): Error {
   return new Error(result.error.issues[0]?.message ?? '学习会话数据无效');
@@ -22,6 +23,7 @@ export class SessionService {
     private readonly graphRepository: GraphRepository,
     private readonly assessmentRepository: AssessmentRepository,
     private readonly tutorRepository: TutorRepository,
+    private readonly practiceRepository: PracticeRepository,
   ) {}
 
   list(untrustedGraphId: unknown): LearningSessionView[] {
@@ -62,6 +64,9 @@ export class SessionService {
     if (this.assessmentRepository.listDiagnosticAttempts(input.graphId)
       .some((attempt) => attempt.status === 'IN_PROGRESS')) {
       throw new Error('当前图谱有未完成的诊断，请先继续或放弃诊断');
+    }
+    if (this.practiceRepository.findActive(input.graphId)) {
+      throw new Error('当前图谱有未完成的练习，请先继续或放弃练习');
     }
     if (node.status === 'LOCKED') throw new Error(node.statusReason);
     if (node.status === 'MASTERED') throw new Error('该概念已经掌握，无需开始新的教学会话');

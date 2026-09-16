@@ -12,9 +12,11 @@ interface LearningStateRow {
   evidence_count: number;
   last_evidence_at: string | null;
   latest_evidence_kind: EvidenceKind | null;
+  most_recent_evidence_kind: EvidenceKind | null;
   latest_score_earned: number | null;
   latest_score_possible: number | null;
   diagnostic_question_count: number;
+  practice_question_count: number;
 }
 
 function toSummary(row: GraphRow): GraphSummary {
@@ -57,9 +59,14 @@ export class GraphRepository {
               (SELECT COUNT(*) FROM learning_evidence e WHERE e.node_id = n.id) AS evidence_count,
               (SELECT MAX(e.occurred_at) FROM learning_evidence e WHERE e.node_id = n.id) AS last_evidence_at,
               latest.kind AS latest_evidence_kind,
+              (SELECT e.kind FROM learning_evidence e
+               WHERE e.node_id = n.id ORDER BY e.occurred_at DESC, e.rowid DESC LIMIT 1) AS most_recent_evidence_kind,
               latest.score_earned AS latest_score_earned,
               latest.score_possible AS latest_score_possible,
-              (SELECT COUNT(*) FROM assessment_questions q WHERE q.node_id = n.id) AS diagnostic_question_count
+              (SELECT COUNT(*) FROM assessment_questions q
+               WHERE q.node_id = n.id AND q.purpose IN ('DIAGNOSTIC', 'BOTH')) AS diagnostic_question_count,
+              (SELECT COUNT(*) FROM assessment_questions q
+               WHERE q.node_id = n.id AND q.purpose IN ('PRACTICE', 'BOTH')) AS practice_question_count
        FROM knowledge_nodes n
        LEFT JOIN learner_node_states s ON s.node_id = n.id
        LEFT JOIN learning_evidence latest ON latest.id = s.latest_evidence_id
@@ -75,9 +82,11 @@ export class GraphRepository {
       evidenceCount: Number(learningByNodeId.get(row.id)?.evidence_count ?? 0),
       lastEvidenceAt: learningByNodeId.get(row.id)?.last_evidence_at ?? null,
       latestEvidenceKind: learningByNodeId.get(row.id)?.latest_evidence_kind ?? null,
+      mostRecentEvidenceKind: learningByNodeId.get(row.id)?.most_recent_evidence_kind ?? null,
       latestEvidenceScoreEarned: learningByNodeId.get(row.id)?.latest_score_earned ?? null,
       latestEvidenceScorePossible: learningByNodeId.get(row.id)?.latest_score_possible ?? null,
       diagnosticQuestionCount: Number(learningByNodeId.get(row.id)?.diagnostic_question_count ?? 0),
+      practiceQuestionCount: Number(learningByNodeId.get(row.id)?.practice_question_count ?? 0),
     }));
     const edges: KnowledgeEdgeView[] = edgeRows.map((row) => ({
       id: row.id, graphId: row.graph_id, sourceNodeId: row.source_node_id,
@@ -113,6 +122,12 @@ export class GraphRepository {
          WHERE q.node_id = ? AND a.graph_id = ? AND a.status = 'IN_PROGRESS'
          LIMIT 1`,
       );
+      const findActivePractice = this.database.prepare(
+        `SELECT node_name_snapshot
+         FROM practice_attempts
+         WHERE node_id = ? AND graph_id = ? AND status = 'IN_PROGRESS'
+         LIMIT 1`,
+      );
       for (const existingNode of existingNodes) {
         if (inputNodeIds.has(existingNode.id)) continue;
         const activeSession = findActiveSession.get(existingNode.id, input.id) as { node_name_snapshot: string } | undefined;
@@ -121,6 +136,10 @@ export class GraphRepository {
         }
         if (findActiveDiagnostic.get(existingNode.id, input.id)) {
           throw new Error('该概念正在未完成的诊断中，请先继续或放弃诊断再删除');
+        }
+        const activePractice = findActivePractice.get(existingNode.id, input.id) as { node_name_snapshot: string } | undefined;
+        if (activePractice) {
+          throw new Error(`“${activePractice.node_name_snapshot}”有未完成的练习，请先继续或放弃练习再删除`);
         }
         deleteNode.run(existingNode.id, input.id);
       }

@@ -24,9 +24,11 @@ const graph: KnowledgeGraphDocument = {
     evidenceCount: 0,
     lastEvidenceAt: null,
     latestEvidenceKind: null,
+    mostRecentEvidenceKind: null,
     latestEvidenceScoreEarned: null,
     latestEvidenceScorePossible: null,
     diagnosticQuestionCount: 0,
+    practiceQuestionCount: 0,
   }],
   edges: [],
 };
@@ -80,6 +82,10 @@ function installTutorApi(): OpenLearnGraphApi {
       saveDraft: vi.fn(),
       complete: vi.fn(),
       cancel: vi.fn(),
+    },
+    practice: {
+      list: vi.fn(), getActive: vi.fn(), get: vi.fn(), start: vi.fn(),
+      saveAnswer: vi.fn(), complete: vi.fn(), cancel: vi.fn(),
     },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };

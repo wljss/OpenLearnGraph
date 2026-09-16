@@ -43,15 +43,20 @@ function parseContext(value: string): TutorDecisionContext {
   }
   const attemptId = (parsed as { attemptId?: unknown }).attemptId;
   const sessionId = (parsed as { sessionId?: unknown }).sessionId;
+  const practiceAttemptId = (parsed as { practiceAttemptId?: unknown }).practiceAttemptId;
   if (attemptId !== undefined && typeof attemptId !== 'string') {
     throw new Error('学习建议中的诊断上下文已损坏');
   }
   if (sessionId !== undefined && typeof sessionId !== 'string') {
     throw new Error('学习建议中的会话上下文已损坏');
   }
+  if (practiceAttemptId !== undefined && typeof practiceAttemptId !== 'string') {
+    throw new Error('学习建议中的练习上下文已损坏');
+  }
   return {
     ...(attemptId === undefined ? {} : { attemptId }),
     ...(sessionId === undefined ? {} : { sessionId }),
+    ...(practiceAttemptId === undefined ? {} : { practiceAttemptId }),
   };
 }
 

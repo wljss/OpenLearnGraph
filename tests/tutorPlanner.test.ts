@@ -18,9 +18,11 @@ function node(id: string, name: string, overrides: Partial<KnowledgeNodeView> = 
     evidenceCount: 0,
     lastEvidenceAt: null,
     latestEvidenceKind: null,
+    mostRecentEvidenceKind: null,
     latestEvidenceScoreEarned: null,
     latestEvidenceScorePossible: null,
     diagnosticQuestionCount: 0,
+    practiceQuestionCount: 0,
     ...overrides,
   };
 }
@@ -52,6 +54,7 @@ describe('deterministic tutor planner', () => {
         latestEvidenceKind: 'DIAGNOSTIC_RESULT',
         latestEvidenceScoreEarned: 1,
         latestEvidenceScorePossible: 2,
+        practiceQuestionCount: 1,
       }),
     ]));
     expect(result).toMatchObject({ action: 'REMEDIATE', reasonCode: 'REMEDIATE_FAILED_DIAGNOSTIC' });
@@ -68,6 +71,7 @@ describe('deterministic tutor planner', () => {
         status: 'MASTERED',
         learningPhase: 'MASTERED',
         evidenceCount: 1,
+        practiceQuestionCount: 1,
       }),
     ]))).toMatchObject({ action: 'REVIEW', reasonCode: 'REVIEW_COMPLETE_GRAPH' });
   });
@@ -97,5 +101,36 @@ describe('deterministic tutor planner', () => {
       reasonCode: 'RESUME_LEARNING_SESSION',
       context: { sessionId },
     });
+  });
+
+  it('resumes a persisted practice before planning a new action', () => {
+    const nodeId = '22222222-2222-4222-8222-222222222222';
+    const attemptId = '55555555-5555-4555-8555-555555555555';
+    expect(planNextLearningAction(
+      graph([node(nodeId, '基础概念', { practiceQuestionCount: 1 })]),
+      null,
+      null,
+      { attemptId, targetNodeId: nodeId, targetNodeName: '基础概念', mode: 'PRACTICE' },
+    )).toMatchObject({
+      action: 'PRACTICE',
+      reasonCode: 'RESUME_PRACTICE',
+      context: { practiceAttemptId: attemptId },
+    });
+  });
+
+  it('explains that completed formative practice should be followed by objective diagnosis', () => {
+    const result = planNextLearningAction(graph([
+      node('22222222-2222-4222-8222-222222222222', '已练习概念', {
+        status: 'LEARNING',
+        learningPhase: 'LEARNING',
+        latestEvidenceKind: 'PRACTICE_RESULT',
+        mostRecentEvidenceKind: 'PRACTICE_RESULT',
+        diagnosticQuestionCount: 2,
+        practiceQuestionCount: 2,
+      }),
+    ]));
+    expect(result).toMatchObject({ action: 'ASSESS', reasonCode: 'ASSESS_WITH_QUESTION_BANK' });
+    expect(result?.reason).toContain('完成形成性练习');
+    expect(result?.evidence[0]).toContain('形成性练习');
   });
 });

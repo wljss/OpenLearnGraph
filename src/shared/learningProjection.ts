@@ -58,11 +58,16 @@ export function projectLearningStatuses(
       continue;
     }
     if (node.learningPhase === 'LEARNING') {
+      const practiceSummary = node.latestEvidenceKind === 'PRACTICE_RESULT'
+        && node.latestEvidenceScoreEarned !== null
+        && node.latestEvidenceScorePossible !== null
+        ? `最近一次练习答对 ${node.latestEvidenceScoreEarned}/${node.latestEvidenceScorePossible} 题；练习结果不会直接判定掌握。`
+        : null;
       result.set(node.id, {
         status: 'LEARNING',
         statusReason: diagnosticSummary
           ? `${diagnosticSummary}，尚未达到 80% 的掌握标准。`
-          : '你已经开始学习；继续记录练习或自评证据。',
+          : practiceSummary ?? '你已经开始学习；继续记录练习或自评证据。',
       });
       continue;
     }

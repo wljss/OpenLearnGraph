@@ -15,9 +15,11 @@ const node: KnowledgeNodeView = {
   evidenceCount: 0,
   lastEvidenceAt: null,
   latestEvidenceKind: null,
+  mostRecentEvidenceKind: null,
   latestEvidenceScoreEarned: null,
   latestEvidenceScorePossible: null,
   diagnosticQuestionCount: 0,
+  practiceQuestionCount: 0,
 };
 
 function installAssessmentApi(overrides: Partial<OpenLearnGraphApi['assessments']> = {}) {
@@ -41,6 +43,7 @@ describe('QuestionManager', () => {
       nodeId: node.id,
       prompt: '什么时候可以计算 AB？',
       explanation: 'A 的列数必须等于 B 的行数。',
+      purpose: 'DIAGNOSTIC',
       options: [
         { id: '44444444-4444-4444-8444-444444444444', text: 'A 的列数等于 B 的行数', isCorrect: true },
         { id: '55555555-5555-4555-8555-555555555555', text: 'A 的行数等于 B 的列数', isCorrect: false },
@@ -52,7 +55,7 @@ describe('QuestionManager', () => {
     };
     const api = installAssessmentApi({ saveQuestion: vi.fn().mockResolvedValue(saved) });
     const onCount = vi.fn();
-    render(<QuestionManager node={node} onClose={vi.fn()} onQuestionCountChange={onCount} onMessage={vi.fn()} />);
+    render(<QuestionManager node={node} onClose={vi.fn()} onQuestionCountsChange={onCount} onMessage={vi.fn()} />);
     await screen.findByText('还没有题目。先创建第一道单选题。');
 
     fireEvent.change(screen.getByLabelText('题目'), { target: { value: saved.prompt } });
@@ -60,7 +63,7 @@ describe('QuestionManager', () => {
       fireEvent.change(screen.getByLabelText(`选项 ${index + 1}`), { target: { value: option.text } });
     });
     fireEvent.change(screen.getByLabelText('答案解析（可选）'), { target: { value: saved.explanation } });
-    fireEvent.click(screen.getByRole('button', { name: '保存诊断题' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存题目' }));
 
     await waitFor(() => expect(api.saveQuestion).toHaveBeenCalledWith(expect.objectContaining({
       nodeId: node.id,
@@ -68,17 +71,17 @@ describe('QuestionManager', () => {
       explanation: saved.explanation,
       options: saved.options.map(({ text, isCorrect }) => ({ text, isCorrect })),
     })));
-    expect(onCount).toHaveBeenLastCalledWith(node.id, 1);
+    expect(onCount).toHaveBeenLastCalledWith(node.id, 1, 0);
     expect(await screen.findByText(saved.prompt)).toBeVisible();
   });
 
   it('protects an unfinished question when the dialog is closed', async () => {
     installAssessmentApi();
     const onClose = vi.fn();
-    render(<QuestionManager node={node} onClose={onClose} onQuestionCountChange={vi.fn()} onMessage={vi.fn()} />);
+    render(<QuestionManager node={node} onClose={onClose} onQuestionCountsChange={vi.fn()} onMessage={vi.fn()} />);
     await screen.findByText('还没有题目。先创建第一道单选题。');
     fireEvent.change(screen.getByLabelText('题目'), { target: { value: '尚未完成的问题' } });
-    fireEvent.click(screen.getByRole('button', { name: '关闭诊断题库' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭题库' }));
     expect(screen.getByRole('alertdialog', { name: '放弃尚未保存的题目？' })).toBeVisible();
     expect(onClose).not.toHaveBeenCalled();
   });

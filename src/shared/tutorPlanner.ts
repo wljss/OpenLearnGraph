@@ -3,6 +3,7 @@ import type {
   TutorAction,
   TutorDecisionContext,
   TutorReasonCode,
+  PracticeMode,
 } from './contracts';
 
 export interface ActiveDiagnosticContext {
@@ -15,6 +16,13 @@ export interface ActiveLearningSessionContext {
   targetNodeId: string | null;
   targetNodeName: string;
   action: 'TEACH' | 'ADVANCE';
+}
+
+export interface ActivePracticeContext {
+  attemptId: string;
+  targetNodeId: string | null;
+  targetNodeName: string;
+  mode: PracticeMode;
 }
 
 export interface TutorPlan {
@@ -69,6 +77,7 @@ export function planNextLearningAction(
   graph: KnowledgeGraphDocument,
   activeDiagnostic: ActiveDiagnosticContext | null = null,
   activeLearningSession: ActiveLearningSessionContext | null = null,
+  activePractice: ActivePracticeContext | null = null,
 ): TutorPlan | null {
   if (!graph.nodes.length) return null;
 
@@ -102,12 +111,37 @@ export function planNextLearningAction(
     };
   }
 
+  if (activePractice) {
+    const target = graph.nodes.find((node) => (
+      node.id === activePractice.targetNodeId && node.status !== 'LOCKED'
+    ));
+    return {
+      targetNodeId: target?.id ?? null,
+      targetNodeName: target?.name ?? activePractice.targetNodeName,
+      action: activePractice.mode,
+      reasonCode: 'RESUME_PRACTICE',
+      reason: '你有一项尚未完成的练习，已作答题目和即时反馈都保存在本机。',
+      evidence: ['检测到未完成的练习', '已作答内容可跨重启恢复'],
+      context: { practiceAttemptId: activePractice.attemptId },
+    };
+  }
+
   const actionable = graph.nodes.filter((node) => node.status !== 'LOCKED');
   const failedDiagnostic = actionable.find((node) => objectiveDiagnostic(node) && !diagnosticPassed(node));
   if (failedDiagnostic) {
+    if (failedDiagnostic.mostRecentEvidenceKind === 'PRACTICE_RESULT'
+      && failedDiagnostic.diagnosticQuestionCount >= 2) {
+      return planForNode(
+        failedDiagnostic,
+        'ASSESS',
+        'ASSESS_WITH_QUESTION_BANK',
+        '你已经完成针对性补强，可以重新诊断这个概念，检查薄弱点是否真正改善。',
+        ['最近一次学习行为是补强练习', scoreEvidence(failedDiagnostic)],
+      );
+    }
     return planForNode(
       failedDiagnostic,
-      'REMEDIATE',
+      failedDiagnostic.practiceQuestionCount > 0 ? 'REMEDIATE' : 'TEACH',
       'REMEDIATE_FAILED_DIAGNOSTIC',
       '最近一次客观诊断尚未达到 80% 的掌握标准，建议先回到这个薄弱点进行针对性巩固。',
       [scoreEvidence(failedDiagnostic), failedDiagnostic.statusReason],
@@ -116,20 +150,38 @@ export function planNextLearningAction(
 
   const learning = actionable.find((node) => node.status === 'LEARNING');
   if (learning) {
+    if (!objectiveDiagnostic(learning)
+      && learning.practiceQuestionCount > 0
+      && learning.latestEvidenceKind !== 'PRACTICE_RESULT') {
+      return planForNode(
+        learning,
+        'PRACTICE',
+        'CONTINUE_PRACTICE',
+        '你已经完成概念学习，现在用形成性练习主动检验理解，再决定是否进入诊断。',
+        [`已有 ${learning.practiceQuestionCount} 道练习题`, learning.statusReason],
+      );
+    }
     if (!objectiveDiagnostic(learning) && learning.diagnosticQuestionCount >= 2) {
+      const completedPractice = learning.latestEvidenceKind === 'PRACTICE_RESULT';
       return planForNode(
         learning,
         'ASSESS',
         'ASSESS_WITH_QUESTION_BANK',
-        '你已经开始学习，并且题库覆盖充足；现在可以用一次客观诊断检查掌握情况。',
-        [`已有 ${learning.diagnosticQuestionCount} 道诊断题`, learning.statusReason],
+        completedPractice
+          ? '你已经完成形成性练习；现在可以用一次客观诊断确认是否真正掌握。'
+          : '你已经开始学习，并且题库覆盖充足；现在可以用一次客观诊断检查掌握情况。',
+        completedPractice
+          ? ['最近一次学习行为是形成性练习', `已有 ${learning.diagnosticQuestionCount} 道诊断题`]
+          : [`已有 ${learning.diagnosticQuestionCount} 道诊断题`, learning.statusReason],
       );
     }
     return planForNode(
       learning,
-      'PRACTICE',
+      learning.practiceQuestionCount > 0 ? 'PRACTICE' : 'TEACH',
       'CONTINUE_PRACTICE',
-      '这个概念仍处于学习中，建议继续练习并在准备好后记录新的学习证据。',
+      learning.practiceQuestionCount > 0
+        ? '这个概念仍处于学习中，继续练习可以暴露尚未理解的细节。'
+        : '这个概念仍处于学习中，但尚无练习题，建议先回顾已有学习内容。',
       [learning.statusReason, `已有 ${learning.evidenceCount} 条学习证据`],
     );
   }
@@ -160,6 +212,8 @@ export function planNextLearningAction(
   const reviewTarget = graph.nodes.find((node) => node.status === 'REVIEW_DUE')
     ?? graph.nodes.find((node) => node.status === 'MASTERED');
   if (reviewTarget) {
+    if (reviewTarget.practiceQuestionCount < 1) return null;
+    if (reviewTarget.mostRecentEvidenceKind === 'PRACTICE_RESULT') return null;
     const allMastered = graph.nodes.every((node) => node.status === 'MASTERED');
     return planForNode(
       reviewTarget,

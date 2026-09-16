@@ -5,17 +5,20 @@ import { openDatabase } from './database/database';
 import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
+import { registerPracticeIpc } from './ipc/registerPracticeIpc';
 import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
+import { PracticeRepository } from './repositories/practiceRepository';
 import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
+import { PracticeService } from './services/practiceService';
 import { SessionService } from './services/sessionService';
 import { TutorService } from './services/tutorService';
 
@@ -72,6 +75,7 @@ void app.whenReady().then(() => {
   const assessmentRepository = new AssessmentRepository(database);
   const tutorRepository = new TutorRepository(database);
   const sessionRepository = new SessionRepository(database);
+  const practiceRepository = new PracticeRepository(database);
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
@@ -84,11 +88,20 @@ void app.whenReady().then(() => {
     graphRepository,
     assessmentRepository,
     sessionRepository,
+    practiceRepository,
   ));
   registerSessionIpc(new SessionService(
     sessionRepository,
     graphRepository,
     assessmentRepository,
+    tutorRepository,
+    practiceRepository,
+  ));
+  registerPracticeIpc(new PracticeService(
+    practiceRepository,
+    graphRepository,
+    assessmentRepository,
+    sessionRepository,
     tutorRepository,
   ));
   registerLifecycleIpc();

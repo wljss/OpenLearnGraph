@@ -9,6 +9,7 @@ import { AssessmentRepository } from '../src/main/repositories/assessmentReposit
 import { GraphRepository } from '../src/main/repositories/graphRepository';
 import { LearningRepository } from '../src/main/repositories/learningRepository';
 import { SessionRepository } from '../src/main/repositories/sessionRepository';
+import { PracticeRepository } from '../src/main/repositories/practiceRepository';
 import { TutorRepository } from '../src/main/repositories/tutorRepository';
 import { AssessmentService } from '../src/main/services/assessmentService';
 import { GraphService } from '../src/main/services/graphService';
@@ -31,11 +32,12 @@ function installServices(targetDatabase: DatabaseSync): void {
   const assessmentRepository = new AssessmentRepository(targetDatabase);
   const sessionRepository = new SessionRepository(targetDatabase);
   const tutorRepository = new TutorRepository(targetDatabase);
+  const practiceRepository = new PracticeRepository(targetDatabase);
   graphService = new GraphService(graphRepository);
   learningService = new LearningService(learningRepository, graphRepository);
   assessmentService = new AssessmentService(assessmentRepository, graphRepository, learningRepository);
-  sessionService = new SessionService(sessionRepository, graphRepository, assessmentRepository, tutorRepository);
-  tutorService = new TutorService(tutorRepository, graphRepository, assessmentRepository, sessionRepository);
+  sessionService = new SessionService(sessionRepository, graphRepository, assessmentRepository, tutorRepository, practiceRepository);
+  tutorService = new TutorService(tutorRepository, graphRepository, assessmentRepository, sessionRepository, practiceRepository);
 }
 
 beforeEach(() => {

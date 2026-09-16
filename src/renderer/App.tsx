@@ -21,6 +21,7 @@ import {
   LearningSessionRunner,
   type LearningSessionLaunch,
 } from './features/session/LearningSessionRunner';
+import { PracticeRunner, type PracticeLaunch } from './features/practice/PracticeRunner';
 
 type NoticeTone = 'info' | 'success' | 'error';
 
@@ -87,9 +88,10 @@ export function App(): React.JSX.Element {
   const [questionManagerNodeId, setQuestionManagerNodeId] = useState<string | null>(null);
   const [diagnosticNodeIds, setDiagnosticNodeIds] = useState<string[] | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<LearningSessionLaunch | null>(null);
+  const [practiceLaunch, setPracticeLaunch] = useState<PracticeLaunch | null>(null);
   const [recommendationRevision, setRecommendationRevision] = useState(0);
   const [sessionDraftDirty, setSessionDraftDirty] = useState(false);
-  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds || sessionLaunch);
+  const overlayOpen = Boolean(questionManagerNodeId || diagnosticNodeIds || sessionLaunch || practiceLaunch);
   const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
@@ -240,9 +242,11 @@ export function App(): React.JSX.Element {
       evidenceCount: 0,
       lastEvidenceAt: null,
       latestEvidenceKind: null,
+      mostRecentEvidenceKind: null,
       latestEvidenceScoreEarned: null,
       latestEvidenceScorePossible: null,
       diagnosticQuestionCount: 0,
+      practiceQuestionCount: 0,
     };
     replaceGraph({ ...graph, nodes: [...graph.nodes, node] });
     setSelectedNodeId(node.id);
@@ -308,11 +312,34 @@ export function App(): React.JSX.Element {
     setSessionLaunch({ nodeId, action: 'TEACH' });
   }, [graph, showNotice]);
 
-  const updateQuestionCount = useCallback((nodeId: string, count: number): void => {
+  const openPractice = useCallback((nodeId: string): void => {
+    const node = graph?.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    if (node.practiceQuestionCount < 1) {
+      setSelectedNodeId(node.id);
+      showNotice('请先在题库中添加至少一道用途为“练习”或“通用”的题目。', 'error');
+      return;
+    }
+    const failedDiagnostic = node.latestEvidenceKind === 'DIAGNOSTIC_RESULT'
+      && node.latestEvidenceScoreEarned !== null
+      && node.latestEvidenceScorePossible !== null
+      && node.latestEvidenceScorePossible > 0
+      && node.latestEvidenceScoreEarned / node.latestEvidenceScorePossible < 0.8;
+    setPracticeLaunch({
+      nodeId,
+      mode: failedDiagnostic ? 'REMEDIATE' : node.status === 'MASTERED' ? 'REVIEW' : 'PRACTICE',
+    });
+  }, [graph, showNotice]);
+
+  const updateQuestionCounts = useCallback((
+    nodeId: string,
+    diagnosticCount: number,
+    practiceCount: number,
+  ): void => {
     setGraph((current) => current ? {
       ...current,
       nodes: current.nodes.map((node) => node.id === nodeId
-        ? { ...node, diagnosticQuestionCount: count }
+        ? { ...node, diagnosticQuestionCount: diagnosticCount, practiceQuestionCount: practiceCount }
         : node),
     } : current);
   }, []);
@@ -351,6 +378,24 @@ export function App(): React.JSX.Element {
       });
       return;
     }
+    if (decision.action === 'PRACTICE' || decision.action === 'REMEDIATE' || decision.action === 'REVIEW') {
+      if (decision.context.practiceAttemptId) {
+        setPracticeLaunch({ attemptId: decision.context.practiceAttemptId });
+        return;
+      }
+      const node = graph?.nodes.find((candidate) => candidate.id === decision.targetNodeId);
+      if (!node || node.practiceQuestionCount < 1) {
+        if (node) setSelectedNodeId(node.id);
+        showNotice('这个概念还没有可用练习题，请先在题库中添加“练习”或“通用”题目。', 'error');
+        return;
+      }
+      setPracticeLaunch({
+        nodeId: node.id,
+        mode: decision.action,
+        sourceDecisionId: decision.id,
+      });
+      return;
+    }
     if (decision.targetNodeId) {
       setSelectedNodeId(decision.targetNodeId);
       setNewNodeToFocusId(null);
@@ -376,7 +421,9 @@ export function App(): React.JSX.Element {
     const deletionConsequences = [
       connectedEdgeCount ? `${connectedEdgeCount} 条相连的先修关系` : null,
       node.evidenceCount ? `${node.evidenceCount} 条学习证据` : null,
-      node.diagnosticQuestionCount ? `${node.diagnosticQuestionCount} 道诊断题` : null,
+      node.diagnosticQuestionCount || node.practiceQuestionCount
+        ? `题库内容（诊断 ${node.diagnosticQuestionCount}、练习 ${node.practiceQuestionCount}，通用题会重复计数）`
+        : null,
     ].filter((item): item is string => Boolean(item));
     setConfirmation({
       title: `删除“${node.name || '未命名概念'}”？`,
@@ -388,9 +435,10 @@ export function App(): React.JSX.Element {
       action: async () => {
         setBusy(true);
         try {
-          const [activeSession, attempts] = await Promise.all([
+          const [activeSession, attempts, activePractice] = await Promise.all([
             window.openLearnGraph.sessions.getActive(graph.id),
             window.openLearnGraph.assessments.listDiagnosticAttempts(graph.id),
+            window.openLearnGraph.practice.getActive(graph.id),
           ]);
           if (activeSession?.nodeId === nodeId) {
             setSessionLaunch({ sessionId: activeSession.id });
@@ -400,6 +448,11 @@ export function App(): React.JSX.Element {
           if (attempts.some((attempt) => attempt.status === 'IN_PROGRESS')) {
             setDiagnosticNodeIds([]);
             showNotice('当前图谱还有未完成的诊断，请先继续或放弃诊断。', 'error');
+            return;
+          }
+          if (activePractice?.nodeId === nodeId) {
+            setPracticeLaunch({ attemptId: activePractice.id });
+            showNotice(`“${node.name}”还有未完成的练习，请先继续或放弃练习。`, 'error');
             return;
           }
           replaceGraph({
@@ -544,6 +597,15 @@ export function App(): React.JSX.Element {
           <div className="top-actions">
             <button
               type="button"
+              className="secondary-button practice-launch"
+              disabled={!graph || dirty || interactionBusy}
+              title={dirty ? '请先保存图谱结构' : '继续练习或查看练习记录'}
+              onClick={() => setPracticeLaunch({})}
+            >
+              ◉ 练习中心
+            </button>
+            <button
+              type="button"
               className="secondary-button session-launch"
               disabled={!graph || dirty || interactionBusy}
               title={dirty ? '请先保存图谱结构' : '继续学习或查看会话记录'}
@@ -627,6 +689,7 @@ export function App(): React.JSX.Element {
             onUpdate={updateNode}
             onDelete={deleteNode}
             onStartLearning={openLearningSession}
+            onStartPractice={openPractice}
             onRecordSelfAssessment={recordSelfAssessment}
             onManageQuestions={(nodeId) => setQuestionManagerNodeId(nodeId)}
           />
@@ -647,7 +710,7 @@ export function App(): React.JSX.Element {
         <QuestionManager
           node={questionManagerNode}
           onClose={() => setQuestionManagerNodeId(null)}
-          onQuestionCountChange={updateQuestionCount}
+          onQuestionCountsChange={updateQuestionCounts}
           onMessage={showNotice}
         />
       )}
@@ -668,6 +731,16 @@ export function App(): React.JSX.Element {
           onGraphUpdated={acceptDiagnosticGraph}
           onSessionChanged={notifySessionChanged}
           onDraftDirtyChange={setSessionDraftDirty}
+          onMessage={showNotice}
+        />
+      )}
+      {practiceLaunch && graph && (
+        <PracticeRunner
+          graph={graph}
+          launch={practiceLaunch}
+          onClose={() => setPracticeLaunch(null)}
+          onGraphUpdated={acceptDiagnosticGraph}
+          onPracticeChanged={notifySessionChanged}
           onMessage={showNotice}
         />
       )}

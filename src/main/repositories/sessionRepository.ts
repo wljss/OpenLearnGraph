@@ -226,6 +226,7 @@ export class SessionRepository {
         scorePossible: null,
         assessmentAttemptId: null,
         learningSessionId: session.id,
+        practiceAttemptId: null,
       },
     };
   }

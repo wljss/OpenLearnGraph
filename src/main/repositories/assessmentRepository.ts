@@ -20,6 +20,7 @@ interface QuestionRow {
   node_id: string;
   prompt: string;
   explanation: string;
+  purpose: AssessmentQuestionView['purpose'];
   created_at: string;
   updated_at: string;
 }
@@ -210,7 +211,7 @@ export class AssessmentRepository {
 
   listQuestions(nodeId: string): AssessmentQuestionView[] {
     const questionRows = this.database.prepare(
-      `SELECT id, node_id, prompt, explanation, created_at, updated_at
+      `SELECT id, node_id, prompt, explanation, purpose, created_at, updated_at
        FROM assessment_questions
        WHERE node_id = ?
        ORDER BY created_at, rowid`,
@@ -228,6 +229,7 @@ export class AssessmentRepository {
         nodeId: question.node_id,
         prompt: question.prompt,
         explanation: question.explanation,
+        purpose: question.purpose,
         options: options.map((option) => ({
           id: option.id,
           text: option.text,
@@ -247,17 +249,17 @@ export class AssessmentRepository {
       if (input.id) {
         const update = this.database.prepare(
           `UPDATE assessment_questions
-           SET prompt = ?, explanation = ?, updated_at = ?
+           SET prompt = ?, explanation = ?, purpose = ?, updated_at = ?
            WHERE id = ? AND node_id = ?`,
-        ).run(input.prompt, input.explanation, now, id, input.nodeId);
+        ).run(input.prompt, input.explanation, input.purpose ?? 'DIAGNOSTIC', now, id, input.nodeId);
         if (Number(update.changes) !== 1) throw new Error('要修改的诊断题不存在');
         this.database.prepare('DELETE FROM assessment_options WHERE question_id = ?').run(id);
       } else {
         this.database.prepare(
           `INSERT INTO assessment_questions
-           (id, node_id, prompt, explanation, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).run(id, input.nodeId, input.prompt, input.explanation, now, now);
+           (id, node_id, prompt, explanation, purpose, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).run(id, input.nodeId, input.prompt, input.explanation, input.purpose ?? 'DIAGNOSTIC', now, now);
       }
       const insertOption = this.database.prepare(
         `INSERT INTO assessment_options
@@ -316,7 +318,7 @@ export class AssessmentRepository {
        FROM assessment_attempts a
        LEFT JOIN assessment_attempt_questions q ON q.attempt_id = a.id
        LEFT JOIN assessment_responses r ON r.attempt_question_id = q.id
-       WHERE a.graph_id = ?
+       WHERE a.graph_id = ? AND a.kind = 'DIAGNOSTIC'
        GROUP BY a.id
        ORDER BY a.started_at DESC, a.rowid DESC
        LIMIT 100`,
@@ -342,6 +344,13 @@ export class AssessmentRepository {
     ).get(input.graphId) as { id: string } | undefined;
     if (activeLearningSession) throw new Error('当前图谱有未完成的学习会话，请先继续或放弃后再开始诊断');
 
+    const activePractice = this.database.prepare(
+      `SELECT id FROM practice_attempts
+       WHERE graph_id = ? AND status = 'IN_PROGRESS'
+       LIMIT 1`,
+    ).get(input.graphId) as { id: string } | undefined;
+    if (activePractice) throw new Error('当前图谱有未完成的练习，请先继续或放弃后再开始诊断');
+
     const active = this.database.prepare(
       `SELECT id FROM assessment_attempts
        WHERE graph_id = ? AND status = 'IN_PROGRESS'
@@ -354,6 +363,7 @@ export class AssessmentRepository {
       `SELECT n.id, COUNT(q.id) AS question_count
        FROM knowledge_nodes n
        LEFT JOIN assessment_questions q ON q.node_id = n.id
+         AND q.purpose IN ('DIAGNOSTIC', 'BOTH')
        WHERE n.graph_id = ? AND n.id IN (${placeholders})
        GROUP BY n.id`,
     ).all(input.graphId, ...input.nodeIds) as unknown as Array<{ id: string; question_count: number }>;
@@ -363,11 +373,12 @@ export class AssessmentRepository {
     }
 
     const rows = this.database.prepare(
-      `SELECT q.id, q.node_id, q.prompt, q.explanation, q.created_at, q.updated_at,
+      `SELECT q.id, q.node_id, q.prompt, q.explanation, q.purpose, q.created_at, q.updated_at,
               n.name AS node_name
        FROM assessment_questions q
        JOIN knowledge_nodes n ON n.id = q.node_id
        WHERE n.graph_id = ? AND n.id IN (${placeholders})
+         AND q.purpose IN ('DIAGNOSTIC', 'BOTH')
        ORDER BY n.created_at, q.created_at, q.rowid`,
     ).all(input.graphId, ...input.nodeIds) as unknown as DiagnosticSourceRow[];
     if (!rows.length) throw new Error('至少需要为一个概念准备 2 道诊断题');
@@ -601,6 +612,7 @@ export class AssessmentRepository {
           scorePossible: aggregate.total,
           assessmentAttemptId: input.attemptId,
           learningSessionId: null,
+          practiceAttemptId: null,
         });
       }
       const complete = this.database.prepare(

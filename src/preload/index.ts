@@ -7,12 +7,14 @@ import {
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
   type RespondTutorDecisionInput,
+  type SavePracticeAnswerInput,
   type SaveAssessmentQuestionInput,
   type SaveDiagnosticAnswerInput,
   type SaveGraphInput,
   type SaveLearningSessionDraftInput,
   type StartLearningSessionInput,
   type StartDiagnosticInput,
+  type StartPracticeInput,
 } from '../shared/contracts';
 
 const api: OpenLearnGraphApi = {
@@ -51,6 +53,15 @@ const api: OpenLearnGraphApi = {
     saveDraft: (input: SaveLearningSessionDraftInput) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionDraftSave, input),
     complete: (input: CompleteLearningSessionInput) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionComplete, input),
     cancel: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.learningSessionCancel, sessionId),
+  },
+  practice: {
+    list: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptList, graphId),
+    getActive: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptActiveGet, graphId),
+    get: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptGet, attemptId),
+    start: (input: StartPracticeInput) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptStart, input),
+    saveAnswer: (input: SavePracticeAnswerInput) => ipcRenderer.invoke(IPC_CHANNELS.practiceAnswerSave, input),
+    complete: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptComplete, attemptId),
+    cancel: (attemptId: string) => ipcRenderer.invoke(IPC_CHANNELS.practiceAttemptCancel, attemptId),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {
