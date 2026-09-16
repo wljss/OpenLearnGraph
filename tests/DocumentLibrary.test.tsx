@@ -129,4 +129,34 @@ describe('DocumentLibrary', () => {
     fireEvent.click(screen.getByRole('button', { name: '放弃预览' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('explains chapter and text limits without implying that stored content was discarded', async () => {
+    const limitedPreview: DocumentPreviewView = {
+      ...preview,
+      sectionCount: 13,
+      sections: [{
+        position: 0, heading: '第一章', locator: '第 1 页',
+        content: '甲'.repeat(6000), charCount: 9000, truncated: true,
+      }],
+    };
+    const limitedDetail: ImportedDocumentView = {
+      ...imported,
+      sectionCount: 51,
+      sections: [{
+        position: 0, heading: '第一章', locator: '第 1 页',
+        content: '乙'.repeat(8000), charCount: 9000, truncated: true,
+      }],
+    };
+    installApi({
+      chooseFile: vi.fn().mockResolvedValue(limitedPreview),
+      confirmImport: vi.fn().mockResolvedValue(limitedDetail),
+    });
+    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
+    expect(await screen.findByText(/当前仅展示前 1 \/ 13 节/)).toBeVisible();
+    expect(screen.getByText(/前 6,000 个字符/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '确认导入资料库' }));
+    expect(await screen.findByText(/当前仅展示前 1 \/ 51 节/)).toBeVisible();
+    expect(screen.getByText(/前 8,000 个字符/)).toBeVisible();
+  });
 });

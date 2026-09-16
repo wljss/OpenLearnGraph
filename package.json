@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:documents": "node scripts/smoke-packaged-documents.mjs",
     "check": "npm run lint && npm run typecheck && npm test"
   },
   "author": "OpenLearnGraph contributors",

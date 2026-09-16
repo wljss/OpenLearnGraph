@@ -43,7 +43,11 @@ function metadataFromPreview(preview: DocumentPreviewView): EditableMetadata {
   };
 }
 
-function SectionReader({ sections }: { sections: DocumentSectionPreviewView[] }): React.JSX.Element {
+function SectionReader({ sections, totalSections, isImportPreview }: {
+  sections: DocumentSectionPreviewView[];
+  totalSections: number;
+  isImportPreview: boolean;
+}): React.JSX.Element {
   const [selectedPosition, setSelectedPosition] = useState(sections[0]?.position ?? 0);
   const selected = sections.find((section) => section.position === selectedPosition) ?? sections[0];
   if (!selected) return (
@@ -56,6 +60,12 @@ function SectionReader({ sections }: { sections: DocumentSectionPreviewView[] })
     <div className="document-reader">
       <aside aria-label="章节与页面">
         <strong>内容预览</strong>
+        {totalSections > sections.length && (
+          <p className="document-preview-limit">
+            当前仅展示前 {sections.length} / {totalSections} 节；
+            {isImportPreview ? '确认导入时会保存全部正文。' : '其余章节也已保存在本机。'}
+          </p>
+        )}
         <ol>{sections.map((section) => (
           <li key={section.position}>
             <button
@@ -72,7 +82,7 @@ function SectionReader({ sections }: { sections: DocumentSectionPreviewView[] })
       <article>
         <header><span>{selected.locator}</span><strong>{selected.heading}</strong></header>
         <pre>{selected.content}</pre>
-        {selected.truncated && <p>这里只显示本节前 6000 个字符；确认导入时会保存完整正文。</p>}
+        {selected.truncated && <p>这里只显示本节前 {selected.content.length.toLocaleString('zh-CN')} 个字符；{isImportPreview ? '确认导入时会保存完整正文。' : '完整正文已保存在本机。'}</p>}
       </article>
     </div>
   );
@@ -310,7 +320,7 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
                   查看已导入的“{preview.duplicateDocumentTitle}”
                 </button>
               )}
-              <SectionReader sections={current.sections} />
+              <SectionReader sections={current.sections} totalSections={current.sectionCount} isImportPreview={Boolean(preview)} />
 
               <footer className="document-review-footer">
                 <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改或上传</span>

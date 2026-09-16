@@ -326,7 +326,9 @@ async function extractPdf(buffer: Buffer, fileName: string): Promise<ExtractedDo
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/password/i.test(message)) throw new Error('PDF 受密码保护，请解密后再导入', { cause: error });
-    throw error;
+    if (/worker/i.test(message)) throw new Error('PDF 解析组件启动失败，请重新安装应用并反馈问题', { cause: error });
+    if (/[\u3400-\u9fff]/.test(message)) throw error;
+    throw new Error('PDF 解析失败，文件可能损坏或格式不受支持，请检查文件后重试', { cause: error });
   } finally {
     await task.destroy();
   }
@@ -348,18 +350,20 @@ const BLOCK_TAGS = new Set([
   'nav', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'ul',
 ]);
 
-function orderedMarkupText(value: unknown, parentTag = ''): string {
+function orderedMarkupText(value: unknown): string {
   if (typeof value === 'string' || typeof value === 'number') return String(value);
-  if (Array.isArray(value)) return value.map((item) => orderedMarkupText(item, parentTag)).join('');
+  if (Array.isArray(value)) return value.map((item) => orderedMarkupText(item)).join('');
   if (!value || typeof value !== 'object') return '';
   return Object.entries(value as Record<string, unknown>).map(([key, child]) => {
     if (key === ':@') return '';
-    if (key === '#text') return metadataString(child);
+    // Inline elements can split a sentence into several text nodes. Trimming each
+    // node would silently join words that had spaces around the element.
+    if (key === '#text') return typeof child === 'string' || typeof child === 'number' ? String(child) : '';
     const tag = key.toLocaleLowerCase();
     if (tag === 'script' || tag === 'style' || tag === 'svg') return '';
-    const inner = orderedMarkupText(child, tag);
+    const inner = orderedMarkupText(child);
     return BLOCK_TAGS.has(tag) ? `\n${inner}\n` : inner;
-  }).join(parentTag === 'pre' ? '' : '');
+  }).join('');
 }
 
 function firstMarkupHeading(value: unknown): string {
@@ -389,7 +393,9 @@ function resolveEpubPath(baseFile: string, href: string): string {
 }
 
 async function extractEpub(buffer: Buffer, fileName: string): Promise<ExtractedDocument> {
-  const zip = await JSZip.loadAsync(buffer, { checkCRC32: true });
+  const zip = await JSZip.loadAsync(buffer, { checkCRC32: true }).catch((error: unknown) => {
+    throw new Error('EPUB 文件损坏或不是有效的电子书，请检查文件后重试', { cause: error });
+  });
   const entries = Object.values(zip.files) as ZipEntryWithSize[];
   const uncompressedSize = entries.reduce((total, entry) => total + (entry._data?.uncompressedSize ?? 0), 0);
   if (uncompressedSize > MAX_EPUB_UNCOMPRESSED_BYTES) throw new Error('EPUB 解压后超过 200 MB，已停止解析');
@@ -428,6 +434,7 @@ async function extractEpub(buffer: Buffer, fileName: string): Promise<ExtractedD
     ignoreAttributes: false,
     removeNSPrefix: true,
     processEntities: true,
+    trimValues: false,
   });
   const sections: ExtractedDocumentSection[] = [];
   for (const itemRef of spineItems) {
@@ -481,7 +488,14 @@ export async function extractDocument(
   const extension = extname(fileName).toLocaleLowerCase();
   const isPdf = buffer.subarray(0, 5).toString('ascii') === '%PDF-';
   if (isPdf) return extractPdf(buffer, fileName);
-  if (extension === '.epub') return extractEpub(buffer, fileName);
+  if (extension === '.epub') {
+    try {
+      return await extractEpub(buffer, fileName);
+    } catch (error) {
+      if (error instanceof Error && /[\u3400-\u9fff]/.test(error.message)) throw error;
+      throw new Error('EPUB 解析失败，文件可能损坏或格式不受支持，请检查文件后重试', { cause: error });
+    }
+  }
   if (['.md', '.markdown', '.mdown', '.mkd'].includes(extension)) {
     return extractPlainText(buffer, fileName, 'MARKDOWN');
   }

@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 
-export function createTestPdf(text = ''): Buffer {
+export function createTestPdf(text = '') {
   const stream = text ? `BT /F1 12 Tf 72 720 Td (${text.replace(/[()\\]/g, '\\$&')}) Tj ET` : '';
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
@@ -25,7 +25,7 @@ export function createTestPdf(text = ''): Buffer {
   return Buffer.from(pdf, 'binary');
 }
 
-export async function createTestEpub(): Promise<Buffer> {
+export async function createTestEpub() {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>
@@ -46,7 +46,7 @@ export async function createTestEpub(): Promise<Buffer> {
       <spine><itemref idref="chapter-1"/><itemref idref="chapter-2"/></spine>
     </package>`);
   zip.file('OEBPS/chapter1.xhtml', `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body>
-    <h1>第一章 基础</h1><p>这是第一章正文。</p><script>不应进入正文</script>
+    <h1>第一章 基础</h1><p>这是第一章正文。</p><p>用 <strong>机器学习</strong> 解决问题。</p><script>不应进入正文</script>
   </body></html>`);
   zip.file('OEBPS/chapter2.xhtml', `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body>
     <h1>第二章 进阶</h1><p>这是第二章正文。</p>

@@ -2,7 +2,7 @@
 import iconv from 'iconv-lite';
 import { describe, expect, it } from 'vitest';
 import { extractDocument } from '../src/main/documents/documentExtractor';
-import { createTestEpub, createTestPdf } from './documentFixtures';
+import { createTestEpub, createTestPdf } from './documentFixtures.mjs';
 
 describe('local document extraction', () => {
   it('detects Chinese text encoding and preserves Markdown section structure', async () => {
@@ -31,6 +31,7 @@ describe('local document extraction', () => {
     });
     expect(result.sections).toHaveLength(2);
     expect(result.sections[0].content).toContain('第一章正文');
+    expect(result.sections[0].content).toContain('用 机器学习 解决问题');
     expect(result.sections[0].content).not.toContain('不应进入正文');
     expect(result.sections[1].content).toContain('第二章正文');
   });
@@ -60,6 +61,8 @@ describe('local document extraction', () => {
 
   it('rejects unsupported or misleading files', async () => {
     await expect(extractDocument(Buffer.from('not a pdf'), 'fake.pdf')).rejects.toThrow('不是有效的 PDF');
+    await expect(extractDocument(Buffer.from('%PDF-1.4\nbroken'), 'broken.pdf')).rejects.toThrow('PDF 解析失败');
+    await expect(extractDocument(Buffer.from('not an epub'), 'broken.epub')).rejects.toThrow('EPUB 文件损坏');
     await expect(extractDocument(Buffer.from('binary'), 'archive.zip')).rejects.toThrow('暂不支持');
   });
 });

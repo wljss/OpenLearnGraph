@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
@@ -45,6 +46,12 @@ function sectionPreviews(extracted: ExtractedDocument): DocumentSectionPreviewVi
     charCount: section.content.length,
     truncated: section.content.length > PREVIEW_CONTENT_LIMIT,
   }));
+}
+
+async function hashFile(filePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest('hex');
 }
 
 export class DocumentService {
@@ -135,6 +142,11 @@ export class DocumentService {
     if (!currentStat
       || currentStat.size !== preview.sourceSize
       || currentStat.mtime.toISOString() !== preview.sourceModifiedAt) {
+      this.previews.delete(preview.token);
+      throw new Error('源文件在预览后发生了变化，请重新选择并检查内容');
+    }
+    const currentHash = await hashFile(preview.sourcePath).catch(() => null);
+    if (currentHash !== preview.sha256) {
       this.previews.delete(preview.token);
       throw new Error('源文件在预览后发生了变化，请重新选择并检查内容');
     }
