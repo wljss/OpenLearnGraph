@@ -1,4 +1,6 @@
-import { basename, extname, posix } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, extname, join, posix } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import chardet from 'chardet';
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
@@ -258,6 +260,13 @@ function metadataString(value: unknown): string {
 
 async function extractPdf(buffer: Buffer, fileName: string): Promise<ExtractedDocument> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  if (process.versions.electron) {
+    const bundledWorkerPath = join(__dirname, 'pdf.worker.mjs');
+    if (!existsSync(bundledWorkerPath)) {
+      throw new Error('PDF 解析组件缺失，请重新安装或构建应用');
+    }
+    pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(bundledWorkerPath).href;
+  }
   const task = pdfjs.getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,

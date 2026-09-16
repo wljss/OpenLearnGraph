@@ -59,6 +59,8 @@ M6A 的文件选择、读取、散列和解析只在 main 执行。renderer 只�
 
 提取器是确定性的本地实现：PDF.js 按页提取文本及文档元数据，JSZip 与 XML 解析器按 EPUB package 的 spine 顺序读取章节，纯文本与 Markdown 先检测编码再解码并按标题分节。ZIP 内容不会释放到文件系统；单文件、解压总量、条目数、章节数和提取字符数都有上限。只有图像而没有可靠文本层的 PDF 返回受阻预览并提示后续使用 OCR，不会静默保存空内容。导入确认后，资料与完整章节在单个 SQLite 事务中持久化；这一阶段不调用 AI、网络服务，也不创建知识图谱。
 
+PDF.js 的主模块在 Vite 主进程构建中会变成独立代码块，因此 `vite.main.config.mts` 明确把匹配版本的 `pdf.worker.mjs` 输出到同一目录，提取器以文件 URL 指向该构建产物。升级 PDF.js 或更改打包配置时，必须在正式 EXE 中执行一次 PDF 提取预览，不能只依赖源码单元测试。
+
 ## Windows 分发（ADR-004）
 
 M1 使用 Forge 的 ZIP maker，并实际验证可生成和运行 Windows x64 包。曾验证 Squirrel maker，但其旧 NuGet 工具在 Electron 44 的 `dxcompiler.dll` 上失败；为了不保留一个已知会失败的发布命令，当前配置不包含 Squirrel。安装器选择、Squirrel 启动事件、图标、代码签名和 SmartScreen 信誉作为 M10 的完整发布工作一起处理。
