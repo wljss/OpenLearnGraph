@@ -103,7 +103,7 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
       position === 0 ? firstSection : { ...firstSection, position: 1, heading: '第二章', locator: '第 6–10 行', content: '第二章的正文。' }
     )),
     search: vi.fn().mockResolvedValue({ hits: [], hasMore: false }),
-    chooseFile: vi.fn().mockResolvedValue(preview),
+    chooseFiles: vi.fn().mockResolvedValue({ previews: [preview], failures: [] }),
     confirmImport: vi.fn().mockResolvedValue(imported),
     discardPreview: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockResolvedValue(undefined),
@@ -158,7 +158,7 @@ describe('DocumentLibrary', () => {
     render(<DocumentLibrary {...libraryProps({ onMessage })} />);
     expect(await screen.findByText('还没有导入资料')).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: '选择第一份资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择资料（可多选）' }));
     expect(await screen.findByText('第一章的正文。')).toBeVisible();
     expect(screen.getByText('完全在本机完成编码转换。')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /第二章/ }));
@@ -180,6 +180,41 @@ describe('DocumentLibrary', () => {
     expect(onMessage).toHaveBeenLastCalledWith('“学习指南（校对版）”已保存到本地资料库。', 'success');
   });
 
+  it('queues every selected document and imports them one by one', async () => {
+    const secondPreview: DocumentPreviewView = {
+      ...preview,
+      previewToken: '22222222-2222-4222-8222-222222222222',
+      sourceName: 'second.txt',
+      title: '第二份资料',
+      sha256: 'b'.repeat(64),
+      sections: [{ ...preview.sections[0], content: '第二份资料正文。' }],
+    };
+    const secondImported: ImportedDocumentView = {
+      ...imported,
+      id: '33333333-3333-4333-8333-333333333333',
+      title: secondPreview.title,
+      sourceName: secondPreview.sourceName,
+      sha256: secondPreview.sha256,
+    };
+    const documents = installApi({
+      chooseFiles: vi.fn().mockResolvedValue({ previews: [preview, secondPreview], failures: [] }),
+      confirmImport: vi.fn().mockImplementation(async (input) => (
+        input.previewToken === secondPreview.previewToken ? secondImported : imported
+      )),
+    });
+    render(<DocumentLibrary {...libraryProps()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '选择资料（可多选）' }));
+    expect(await screen.findByText(/批量预览 1 \/ 2/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '确认导入资料库' }));
+    expect(await screen.findByRole('heading', { name: '第二份资料' })).toBeVisible();
+    expect(screen.getByText(/批量预览 2 \/ 2/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '确认导入资料库' }));
+
+    await waitFor(() => expect(documents.confirmImport).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('heading', { name: secondImported.title })).toBeVisible();
+  });
+
   it('blocks duplicates and can open the existing imported record', async () => {
     const duplicatePreview: DocumentPreviewView = {
       ...preview,
@@ -188,9 +223,9 @@ describe('DocumentLibrary', () => {
       duplicateDocumentId: imported.id,
       duplicateDocumentTitle: imported.title,
     };
-    const documents = installApi({ chooseFile: vi.fn().mockResolvedValue(duplicatePreview) });
+    const documents = installApi({ chooseFiles: vi.fn().mockResolvedValue({ previews: [duplicatePreview], failures: [] }) });
     render(<DocumentLibrary {...libraryProps()} />);
-    fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
+    fireEvent.click(await screen.findByRole('button', { name: '选择资料（可多选）' }));
     expect(await screen.findByText(duplicatePreview.blockedReason as string)).toBeVisible();
     expect(screen.getByRole('button', { name: '确认导入资料库' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /查看已导入/ }));
@@ -202,7 +237,7 @@ describe('DocumentLibrary', () => {
     const onClose = vi.fn();
     installApi();
     render(<DocumentLibrary {...libraryProps({ onClose })} />);
-    fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
+    fireEvent.click(await screen.findByRole('button', { name: '选择资料（可多选）' }));
     await screen.findByLabelText('标题');
     fireEvent.change(screen.getByLabelText('标题'), { target: { value: '尚未保存的新标题' } });
     fireEvent.click(screen.getByRole('button', { name: '关闭资料库' }));
@@ -230,7 +265,7 @@ describe('DocumentLibrary', () => {
       endOffset: 24_000, totalLength: 26_000, nextOffset: 24_000,
     };
     installApi({
-      chooseFile: vi.fn().mockResolvedValue(limitedPreview),
+      chooseFiles: vi.fn().mockResolvedValue({ previews: [limitedPreview], failures: [] }),
       confirmImport: vi.fn().mockResolvedValue(limitedDetail),
       listSections: vi.fn().mockResolvedValue([{ position: 0, heading: '第一章', locator: '第 1 页', charCount: 26_000 }]),
       getSection: vi.fn().mockImplementation(async (_id: string, _position: number, offset: number) => (
@@ -241,7 +276,7 @@ describe('DocumentLibrary', () => {
       )),
     });
     render(<DocumentLibrary {...libraryProps()} />);
-    fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
+    fireEvent.click(await screen.findByRole('button', { name: '选择资料（可多选）' }));
     expect(await screen.findByText(/当前仅展示前 1 \/ 13 节/)).toBeVisible();
     expect(screen.getByText(/前 6,000 个字符/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '确认导入资料库' }));

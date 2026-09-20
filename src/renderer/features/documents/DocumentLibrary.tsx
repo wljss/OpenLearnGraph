@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AiCandidateGenerationPreviewView,
   CandidateConceptView,
   DocumentPreviewView,
+  DocumentPreviewFailureView,
   DocumentSearchView,
   DocumentSectionPreviewView,
   DocumentSectionSummaryView,
@@ -447,6 +448,9 @@ export function DocumentLibrary({
 }: DocumentLibraryProps): React.JSX.Element {
   const [documents, setDocuments] = useState<ImportedDocumentSummaryView[]>([]);
   const [preview, setPreview] = useState<DocumentPreviewView | null>(null);
+  const [queuedPreviews, setQueuedPreviews] = useState<DocumentPreviewView[]>([]);
+  const [previewBatchTotal, setPreviewBatchTotal] = useState(0);
+  const [previewFailures, setPreviewFailures] = useState<DocumentPreviewFailureView[]>([]);
   const [detail, setDetail] = useState<ImportedDocumentView | null>(null);
   const [metadata, setMetadata] = useState<EditableMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -459,6 +463,7 @@ export function DocumentLibrary({
   const [readerTarget, setReaderTarget] = useState<{
     documentId: string; position: number; offset: number; highlight?: string;
   } | null>(null);
+  const retainedPreviewTokens = useRef(new Set<string>());
 
   const loadDocuments = useCallback(async (): Promise<void> => {
     setDocuments(await window.openLearnGraph.documents.list());
@@ -476,22 +481,29 @@ export function DocumentLibrary({
     return () => { active = false; };
   }, [loadDocuments, onMessage]);
 
-  useEffect(() => {
-    const token = preview?.previewToken;
-    return () => {
-      if (token) void window.openLearnGraph.documents.discardPreview(token).catch(() => undefined);
-    };
-  }, [preview?.previewToken]);
+  useEffect(() => () => {
+    for (const token of retainedPreviewTokens.current) {
+      void window.openLearnGraph.documents.discardPreview(token).catch(() => undefined);
+    }
+    retainedPreviewTokens.current.clear();
+  }, []);
 
-  const metadataChanged = useMemo(() => (
-    Boolean(preview && metadata && JSON.stringify(metadata) !== JSON.stringify(metadataFromPreview(preview)))
-  ), [metadata, preview]);
+  const discardPreviewBatch = useCallback((): void => {
+    for (const token of retainedPreviewTokens.current) {
+      void window.openLearnGraph.documents.discardPreview(token).catch(() => undefined);
+    }
+    retainedPreviewTokens.current.clear();
+    setPreview(null);
+    setQueuedPreviews([]);
+    setPreviewBatchTotal(0);
+    setMetadata(null);
+  }, []);
 
   const requestClose = useCallback((): void => {
     if (busy) return;
-    if (preview && metadataChanged) setDiscardConfirmation('close');
+    if (preview) setDiscardConfirmation('close');
     else onClose();
-  }, [busy, metadataChanged, onClose, preview]);
+  }, [busy, onClose, preview]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -504,19 +516,31 @@ export function DocumentLibrary({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [aiGenerationPreview, aiSettingsOpen, busy, candidateWorkspaceOpen, deleteConfirmation, discardConfirmation, requestClose]);
 
-  const chooseFile = async (): Promise<void> => {
+  const chooseFiles = async (): Promise<void> => {
     setBusy(true);
     try {
-      const next = await window.openLearnGraph.documents.chooseFile();
-      if (!next) return;
+      setPreviewFailures([]);
+      const selection = await window.openLearnGraph.documents.chooseFiles();
+      if (!selection) return;
+      setPreviewFailures(selection.failures);
+      if (!selection.previews.length) {
+        onMessage(selection.failures.length
+          ? `${selection.failures.length} 份资料均解析失败，请查看失败原因。`
+          : '没有选择资料。', selection.failures.length ? 'error' : 'info');
+        return;
+      }
+      for (const item of selection.previews) retainedPreviewTokens.current.add(item.previewToken);
+      const [next, ...queued] = selection.previews;
       setPreview(next);
+      setQueuedPreviews(queued);
+      setPreviewBatchTotal(selection.previews.length);
       setMetadata(metadataFromPreview(next));
       setDetail(null);
-      onMessage(next.canImport
-        ? '文本提取完成，请核对元数据和正文预览。'
-        : `文件已检查，但暂时不能导入：${next.blockedReason}`, next.canImport ? 'success' : 'error');
+      onMessage(selection.failures.length
+        ? `已解析 ${selection.previews.length} 份资料，另有 ${selection.failures.length} 份失败；请逐本核对。`
+        : `已解析 ${selection.previews.length} 份资料，请逐本核对后导入。`, selection.failures.length ? 'info' : 'success');
     } catch (error) {
-      onMessage(`文件解析失败：${errorMessage(error)}`, 'error');
+      onMessage(`资料选择失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -526,6 +550,7 @@ export function DocumentLibrary({
     documentId: string,
     target?: { position: number; offset: number; highlight?: string },
   ): Promise<void> => {
+    discardPreviewBatch();
     setBusy(true);
     try {
       setDetail(await window.openLearnGraph.documents.get(documentId));
@@ -535,8 +560,6 @@ export function DocumentLibrary({
         offset: target.offset,
         highlight: target.highlight,
       } : null);
-      setPreview(null);
-      setMetadata(null);
     } catch (error) {
       onMessage(`资料打开失败：${errorMessage(error)}`, 'error');
     } finally {
@@ -556,16 +579,49 @@ export function DocumentLibrary({
         language: metadata.language,
         identifier: metadata.identifier,
       });
-      setPreview(null);
-      setMetadata(null);
-      setDetail(imported);
+      retainedPreviewTokens.current.delete(preview.previewToken);
+      const [next, ...remaining] = queuedPreviews;
+      if (next) {
+        setPreview(next);
+        setQueuedPreviews(remaining);
+        setMetadata(metadataFromPreview(next));
+        setDetail(null);
+      } else {
+        setPreview(null);
+        setQueuedPreviews([]);
+        setPreviewBatchTotal(0);
+        setMetadata(null);
+        setDetail(imported);
+      }
       setReaderTarget(null);
       await loadDocuments();
-      onMessage(`“${imported.title}”已保存到本地资料库。`, 'success');
+      onMessage(next
+        ? `“${imported.title}”已保存，继续核对第 ${previewBatchTotal - remaining.length} / ${previewBatchTotal} 份资料。`
+        : `“${imported.title}”已保存到本地资料库。`, 'success');
     } catch (error) {
       onMessage(`资料导入失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const skipCurrentPreview = (): void => {
+    if (!preview) return;
+    retainedPreviewTokens.current.delete(preview.previewToken);
+    void window.openLearnGraph.documents.discardPreview(preview.previewToken).catch(() => undefined);
+    const [next, ...remaining] = queuedPreviews;
+    if (next) {
+      setPreview(next);
+      setQueuedPreviews(remaining);
+      setMetadata(metadataFromPreview(next));
+      onMessage(`已跳过“${preview.sourceName}”，继续核对第 ${previewBatchTotal - remaining.length} / ${previewBatchTotal} 份资料。`, 'info');
+    } else {
+      setPreview(null);
+      setQueuedPreviews([]);
+      setPreviewBatchTotal(0);
+      setMetadata(null);
+      setDetail(null);
+      onMessage(`已跳过“${preview.sourceName}”。`, 'info');
     }
   };
 
@@ -586,17 +642,24 @@ export function DocumentLibrary({
   };
 
   const returnToLibrary = (): void => {
-    if (preview && metadataChanged) {
+    if (preview) {
       setDiscardConfirmation('back');
       return;
     }
-    setPreview(null);
-    setMetadata(null);
     setDetail(null);
     setReaderTarget(null);
   };
 
   const current = preview ?? detail;
+  const previewBatchPosition = preview ? previewBatchTotal - queuedPreviews.length : 0;
+  const previewFailureNotice = previewFailures.length ? (
+    <section className="document-batch-failures" role="alert">
+      <strong>{previewFailures.length} 份资料未能解析</strong>
+      <ul>{previewFailures.map((failure, index) => (
+        <li key={`${index}:${failure.sourceName}:${failure.message}`}><span>{failure.sourceName}</span><small>{failure.message}</small></li>
+      ))}</ul>
+    </section>
+  ) : null;
   const prepareAiGeneration = async (sectionPosition: number): Promise<void> => {
     if (!activeGraph || !detail) return;
     const settings = await window.openLearnGraph.ai.getSettings();
@@ -637,7 +700,9 @@ export function DocumentLibrary({
             <div>
               <span className="modal-kicker">本地资料库 · AI 仅在明确确认后调用</span>
               <h2 id="document-library-title">{current ? current.title : '本地资料库'}</h2>
-              <p>{current ? current.sourceName : '先预览提取结果，确认后才保存正文。支持 PDF、EPUB、Markdown 和 TXT。'}</p>
+              <p>{current
+                ? `${current.sourceName}${preview && previewBatchTotal > 1 ? ` · 批量预览 ${previewBatchPosition} / ${previewBatchTotal}` : ''}`
+                : '可一次选择多份资料；全部在本机解析，再逐本预览确认。支持 PDF、EPUB、Markdown 和 TXT。'}</p>
             </div>
             <div className="document-header-actions">
               <button type="button" disabled={busy} onClick={() => setAiSettingsOpen(true)}>AI 设置</button>
@@ -658,10 +723,11 @@ export function DocumentLibrary({
             <div className="document-library-home">
               <div className="document-library-toolbar">
                 <div><strong>已导入资料</strong><span>{documents.length} 份 · 最多显示最近 500 份</span></div>
-                <button className="primary-button" type="button" disabled={busy} onClick={() => void chooseFile()}>
-                  {busy ? '正在解析…' : '＋ 选择本地文件'}
+                <button className="primary-button" type="button" disabled={busy} onClick={() => void chooseFiles()}>
+                  {busy ? '正在解析所选资料…' : '＋ 选择本地资料（可多选）'}
                 </button>
               </div>
+              {previewFailureNotice}
               {loading ? <p className="document-empty">正在读取本地资料库……</p> : documents.length ? (
                 <ol className="document-list">{documents.map((document) => (
                   <li key={document.id}>
@@ -682,7 +748,7 @@ export function DocumentLibrary({
                   <span aria-hidden="true">▤</span>
                   <h3>还没有导入资料</h3>
                   <p>选择文件后会先在本机提取和预览，不会直接修改知识图谱。</p>
-                  <button className="secondary-button" type="button" disabled={busy} onClick={() => void chooseFile()}>选择第一份资料</button>
+                  <button className="secondary-button" type="button" disabled={busy} onClick={() => void chooseFiles()}>选择资料（可多选）</button>
                 </div>
               )}
             </div>
@@ -696,6 +762,7 @@ export function DocumentLibrary({
                 <div><strong>{current.charCount.toLocaleString('zh-CN')}</strong><small>提取字符</small></div>
                 <div><strong>{current.encoding ?? '—'}</strong><small>文本编码</small></div>
               </section>
+              {preview && previewFailureNotice}
 
               {preview && metadata ? (
                 <section className="document-metadata-editor" aria-label="导入元数据">
@@ -725,8 +792,16 @@ export function DocumentLibrary({
               )}
               {preview?.blockedReason && <div className="document-blocked" role="alert">{preview.blockedReason}</div>}
               {preview?.duplicateDocumentId && (
-                <button className="secondary-button document-duplicate-link" type="button" onClick={() => void openDocument(preview.duplicateDocumentId as string)}>
-                  查看已导入的“{preview.duplicateDocumentTitle}”
+                <button
+                  className="secondary-button document-duplicate-link"
+                  type="button"
+                  onClick={previewBatchTotal > 1
+                    ? skipCurrentPreview
+                    : () => void openDocument(preview.duplicateDocumentId as string)}
+                >
+                  {previewBatchTotal > 1
+                    ? '跳过重复资料，继续下一份'
+                    : `查看已导入的“${preview.duplicateDocumentTitle}”`}
                 </button>
               )}
               {preview
@@ -743,9 +818,12 @@ export function DocumentLibrary({
                 />}
 
               <footer className="document-review-footer">
-                <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改，AI 只发送你明确确认的正文</span>
+                <span>{preview && previewBatchTotal > 1 ? `待核对 ${previewBatchPosition} / ${previewBatchTotal} · ` : ''}SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改</span>
                 <div>
                   {detail && <button className="text-danger-button" type="button" disabled={busy} onClick={() => setDeleteConfirmation(true)}>删除资料</button>}
+                  {preview && (previewBatchTotal > 1 || !preview.canImport) && (
+                    <button type="button" disabled={busy} onClick={skipCurrentPreview}>跳过此资料</button>
+                  )}
                   {preview && (
                     <button className="primary-button" type="button" disabled={busy || !preview.canImport || !metadata?.title.trim()} onClick={() => void confirmImport()}>
                       {busy ? '正在保存…' : '确认导入资料库'}
@@ -761,17 +839,18 @@ export function DocumentLibrary({
       {discardConfirmation && (
         <ConfirmDialog
           title="放弃当前资料预览？"
-          description="元数据修改尚未导入，返回后不会保存；源文件不会受到影响。"
-          confirmLabel="放弃预览"
+          description={previewBatchTotal > 1
+            ? `当前批次还有 ${queuedPreviews.length + 1} 份资料未确认，离开后这些预览不会保存；源文件不会受到影响。`
+            : '当前资料尚未导入，离开后预览不会保存；源文件不会受到影响。'}
+          confirmLabel={previewBatchTotal > 1 ? '放弃本批预览' : '放弃预览'}
           destructive
           onCancel={() => setDiscardConfirmation(null)}
           onConfirm={() => {
             const target = discardConfirmation;
             setDiscardConfirmation(null);
-            if (preview) void window.openLearnGraph.documents.discardPreview(preview.previewToken).catch(() => undefined);
-            setPreview(null);
-            setMetadata(null);
+            discardPreviewBatch();
             setDetail(null);
+            setReaderTarget(null);
             if (target === 'close') onClose();
           }}
         />

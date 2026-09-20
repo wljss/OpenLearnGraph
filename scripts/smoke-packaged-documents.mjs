@@ -168,6 +168,10 @@ function selectFile(app, path) {
   return app.main.evaluate(`process.mainModule.require('electron').dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(path)}] }); true`);
 }
 
+function selectFiles(app, paths) {
+  return app.main.evaluate(`process.mainModule.require('electron').dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ${JSON.stringify(paths)} }); true`);
+}
+
 function call(app, expression) {
   return app.renderer.evaluate(`window.openLearnGraph.documents.${expression}`);
 }
@@ -187,14 +191,14 @@ async function waitForUi(app, expression) {
 
 async function checkFile(app, sample) {
   await selectFile(app, sample.path);
-  const preview = await call(app, 'chooseFile()');
+  const preview = (await call(app, 'chooseFiles()')).previews[0];
   assert.equal(preview.format, sample.format);
   assert.equal(preview.canImport, true, preview.blockedReason ?? '无法导入');
   assert(preview.sections.some((item) => item.content.includes(sample.text)), `${sample.format} 预览缺少预期正文`);
   const imported = await call(app, `confirmImport(${JSON.stringify(makeMetadata(preview))})`);
   const section = await call(app, `getSection(${JSON.stringify(imported.id)}, 0, 0)`);
   assert(section.content.includes(sample.text), `${sample.format} 保存结果缺少预期正文`);
-  const duplicate = await call(app, 'chooseFile()');
+  const duplicate = (await call(app, 'chooseFiles()')).previews[0];
   assert.equal(duplicate.canImport, false);
   assert.equal(duplicate.duplicateDocumentId, imported.id);
   console.log(`通过：${sample.format} 预览、确认和重复导入拦截`);
@@ -232,8 +236,27 @@ async function main() {
     await writeFile(longPath, longText);
 
     app = await launch(profile);
+    await selectFiles(app, [samples[2].path, samples[3].path]);
+    const batchSelection = await call(app, 'chooseFiles()');
+    assert.equal(batchSelection.previews.length, 2);
+    assert.equal(batchSelection.failures.length, 0);
+    const batchImports = [];
+    for (const preview of batchSelection.previews) {
+      batchImports.push(await call(app, `confirmImport(${JSON.stringify(makeMetadata(preview))})`));
+    }
+    for (const imported of batchImports) await call(app, `delete(${JSON.stringify(imported.id)})`);
+    console.log('通过：一次选择两份资料后均完成解析、预览和确认');
+
+    await selectFiles(app, [samples[2].path, badPdf]);
+    const partialSelection = await call(app, 'chooseFiles()');
+    assert.equal(partialSelection.previews.length, 1);
+    assert.equal(partialSelection.failures.length, 1);
+    assert.match(partialSelection.failures[0].message, /不是有效的 PDF/);
+    await call(app, `discardPreview(${JSON.stringify(partialSelection.previews[0].previewToken)})`);
+    console.log('通过：批量选择中单个文件失败不会阻止其他资料预览');
+
     await selectFile(app, longPath);
-    const longPreview = await call(app, 'chooseFile()');
+    const longPreview = (await call(app, 'chooseFiles()')).previews[0];
     assert.equal(longPreview.sectionCount, 70);
     const longImported = await call(app, `confirmImport(${JSON.stringify(makeMetadata(longPreview))})`);
     assert.equal((await call(app, `listSections(${JSON.stringify(longImported.id)}, 50)`)).length, 20);
@@ -246,12 +269,13 @@ async function main() {
     for (const sample of samples) ids.push(await checkFile(app, sample));
 
     await selectFile(app, scan);
-    const scanPreview = await call(app, 'chooseFile()');
+    const scanPreview = (await call(app, 'chooseFiles()')).previews[0];
     assert.equal(scanPreview.canImport, false);
     assert.match(scanPreview.blockedReason, /OCR/);
     for (const [path, expected] of [[badEpub, 'EPUB 文件损坏'], [badPdf, '不是有效的 PDF'], [malformedPdf, 'PDF 解析失败']]) {
       await selectFile(app, path);
-      const result = await app.renderer.evaluate('(async () => { try { await window.openLearnGraph.documents.chooseFile(); return null; } catch (error) { return String(error); } })()');
+      const selection = await call(app, 'chooseFiles()');
+      const result = selection.failures[0]?.message ?? '';
       assert.match(result, new RegExp(expected));
     }
     console.log('通过：扫描件、损坏 EPUB、损坏 PDF 和伪造 PDF 的反馈');
@@ -287,6 +311,19 @@ async function main() {
     await waitForUi(app, "document.querySelector('.document-search-results')?.textContent?.includes('匹配章节') === true");
     await waitForUi(app, "document.querySelector('.document-reader mark')?.textContent === '模型'");
     console.log('通过：正式界面可打开正文并搜索定位');
+
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.document-header-actions button')).find((button) => button.textContent === 'AI 设置').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.ai-settings-dialog'))");
+    assert(await app.renderer.evaluate(`(() => {
+      const dialog = document.querySelector('.ai-settings-dialog');
+      const rect = dialog.getBoundingClientRect();
+      const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return rect.width > 400 && rect.height > 200 && dialog.contains(topElement)
+        && Number(getComputedStyle(dialog.parentElement).zIndex) > Number(getComputedStyle(document.querySelector('.assessment-backdrop')).zIndex);
+    })()`), 'AI 设置对话框没有显示在资料库上方');
+    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭 AI 设置\"]').click(); true");
+    await waitForUi(app, "!document.querySelector('.ai-settings-dialog')");
+    console.log('通过：AI 设置对话框完整显示在资料库上方');
 
     const savedAiSettings = await apiCall(app, 'ai', `saveSettings(${JSON.stringify({
       model: 'deepseek-flash', apiKey: 'sk-packaged-smoke-only',

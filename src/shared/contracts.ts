@@ -530,6 +530,14 @@ export interface DocumentPreviewView {
   duplicateDocumentId: string | null;
   duplicateDocumentTitle: string | null;
 }
+export interface DocumentPreviewFailureView {
+  sourceName: string;
+  message: string;
+}
+export interface DocumentSelectionView {
+  previews: DocumentPreviewView[];
+  failures: DocumentPreviewFailureView[];
+}
 export interface ImportedDocumentSummaryView {
   id: string;
   title: string;
@@ -724,7 +732,7 @@ export interface OpenLearnGraphApi {
     listSections(documentId: string, offset: number): Promise<DocumentSectionSummaryView[]>;
     getSection(documentId: string, position: number, offset: number): Promise<DocumentSectionView>;
     search(documentId: string, query: string): Promise<DocumentSearchView>;
-    chooseFile(): Promise<DocumentPreviewView | null>;
+    chooseFiles(): Promise<DocumentSelectionView | null>;
     confirmImport(input: ConfirmDocumentImportInput): Promise<ImportedDocumentView>;
     discardPreview(previewToken: string): Promise<void>;
     delete(documentId: string): Promise<void>;

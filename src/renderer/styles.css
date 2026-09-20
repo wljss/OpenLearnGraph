@@ -172,7 +172,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .react-flow__controls { box-shadow: 0 2px 8px rgba(30,50,46,.12); }
 .react-flow__controls-button { border-color: #e0e5e4; }
 .react-flow__minimap { border: 1px solid #d7dfdd; border-radius: 6px; background: white; }
-.dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16,31,27,.42); backdrop-filter: blur(2px); }
+.dialog-backdrop { position: fixed; z-index: 130; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(16,31,27,.42); backdrop-filter: blur(2px); }
 .confirm-dialog { width: min(440px, 100%); display: grid; grid-template-columns: auto 1fr; gap: 0 14px; padding: 22px; border: 1px solid #d7dfdd; border-radius: 13px; background: white; box-shadow: 0 24px 70px rgba(15,32,27,.28); }
 .dialog-icon { width: 34px; height: 34px; display: grid; place-items: center; color: #326f61; border-radius: 50%; background: #e5f1ee; font-size: 17px; font-weight: 800; }
 .dialog-icon.destructive { color: #aa4545; background: #fbeaea; }
@@ -449,6 +449,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .document-format.format-markdown { color: #3e6482; border-color: #c3d4e0; background: #f0f7fb; }
 .document-warning-count { color: #9a6b2f; font-size: 11px; }
 .document-empty, .document-empty-state { color: #71817c; font-size: 12px; }
+.document-batch-failures { margin: 0 0 14px; padding: 11px 13px; color: #88433f; border: 1px solid #e5bbb7; border-radius: 8px; background: #fff4f2; }
+.document-review > .document-batch-failures { margin: 10px 24px 0; }
+.document-batch-failures > strong { font-size: 12px; }
+.document-batch-failures ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
+.document-batch-failures li { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+.document-batch-failures li span { font-weight: 700; }
+.document-batch-failures li small { text-align: right; }
 .document-empty-state { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
 .document-empty-state > span { color: #8caaa1; font-size: 34px; }
 .document-empty-state h3 { margin: 12px 0 5px; color: #3b514a; font-size: 16px; }
@@ -522,7 +529,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .document-review-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 24px; border-top: 1px solid #dfe6e4; background: #fbfcfc; }
 .document-review-footer > span { color: #8a9793; font-size: 11px; }
 .document-review-footer > div { display: flex; align-items: center; gap: 16px; }
-.candidate-workspace-backdrop { position: fixed; z-index: 80; inset: 0; display: flex; align-items: center; justify-content: center; padding: 26px; background: rgba(19,42,35,.58); backdrop-filter: blur(2px); }
+.candidate-workspace-backdrop { position: fixed; z-index: 110; inset: 0; display: flex; align-items: center; justify-content: center; padding: 26px; background: rgba(19,42,35,.58); backdrop-filter: blur(2px); }
 .candidate-workspace { width: min(1040px,100%); height: min(820px,calc(100vh - 52px)); display: flex; flex-direction: column; overflow: hidden; color: #33463f; border: 1px solid #c6d5d0; border-radius: 15px; background: #fff; box-shadow: 0 30px 100px rgba(9,29,23,.38); }
 .candidate-workspace > header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 22px 26px 18px; border-bottom: 1px solid #dfe7e4; }
 .candidate-workspace > header span { color: #3e7768; font-size: 10px; font-weight: 800; letter-spacing: .04em; }

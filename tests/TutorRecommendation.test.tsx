@@ -89,7 +89,7 @@ function installTutorApi(): OpenLearnGraphApi {
     },
     documents: {
       list: vi.fn(), get: vi.fn(), listSections: vi.fn(), getSection: vi.fn(),
-      search: vi.fn(), chooseFile: vi.fn(), confirmImport: vi.fn(),
+      search: vi.fn(), chooseFiles: vi.fn(), confirmImport: vi.fn(),
       discardPreview: vi.fn(), delete: vi.fn(),
     },
     candidates: {
