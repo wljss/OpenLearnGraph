@@ -12,6 +12,7 @@ describe('database migrations', () => {
     const filePath = join(directory, 'graph.sqlite3');
     const graphId = '11111111-1111-4111-8111-111111111111';
     const nodeId = '22222222-2222-4222-8222-222222222222';
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
     try {
       const oldDatabase = openDatabase(filePath);
       oldDatabase.prepare(
@@ -23,6 +24,8 @@ describe('database migrations', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, '旧版概念', '', 10, 20, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
       oldDatabase.exec(`
+        DROP TABLE candidate_relationships;
+        DROP TABLE candidate_concepts;
         DROP TABLE imported_document_sections;
         DROP TABLE imported_documents;
         DROP TABLE learner_node_states;
@@ -37,10 +40,10 @@ describe('database migrations', () => {
       `);
       oldDatabase.close();
 
-      const upgraded = openDatabase(filePath);
+      upgraded = openDatabase(filePath);
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
-      expect(version.user_version).toBe(7);
+      expect(version.user_version).toBe(8);
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tutor_decisions'",
       ).get()).toBeTruthy();
@@ -53,10 +56,13 @@ describe('database migrations', () => {
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'imported_documents'",
       ).get()).toBeTruthy();
+      expect(upgraded.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'candidate_concepts'",
+      ).get()).toBeTruthy();
       expect(restored?.nodes[0]).toMatchObject({ name: '旧版概念', status: 'AVAILABLE', evidenceCount: 0 });
-      upgraded.close();
     } finally {
-      rmSync(directory, { recursive: true, force: true });
+      upgraded?.close();
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -79,6 +85,8 @@ describe('database migrations', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(nodeId, graphId, 'M2 概念', '', 10, 20, occurredAt, occurredAt);
       oldDatabase.exec(`
+        DROP TABLE candidate_relationships;
+        DROP TABLE candidate_concepts;
         DROP TABLE imported_document_sections;
         DROP TABLE imported_documents;
         DROP TABLE learner_node_states;
@@ -131,7 +139,7 @@ describe('database migrations', () => {
         `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id, learning_session_id, practice_attempt_id
          FROM learning_evidence WHERE id = ?`,
       ).get(evidenceId);
-      expect(version.user_version).toBe(7);
+      expect(version.user_version).toBe(8);
       expect(restored?.nodes[0]).toMatchObject({ status: 'MASTERED', evidenceCount: 1, diagnosticQuestionCount: 0 });
       expect(evidence).toMatchObject({
         kind: 'SELF_ASSESSMENT',
@@ -145,7 +153,7 @@ describe('database migrations', () => {
       });
     } finally {
       upgraded?.close();
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });

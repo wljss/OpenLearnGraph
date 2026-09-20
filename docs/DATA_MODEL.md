@@ -178,8 +178,31 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 文件选择、读取和提取只发生在 main。导入预览以短期随机 token 暂存在内存中，renderer 既不提供也不接收本机路径；确认时服务会再次核对原文件大小和修改时间，再在单个事务中写入资料与全部章节。扫描 PDF 等无法得到可靠文本的资料只返回受阻预览和可执行提示，不写入数据库。
 
-## 计划中的独立实体（M7+）
+## M7A 候选图谱实体
 
-- 候选图谱、资料片段与知识节点来源关联
+### candidate_concepts
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| id / graph_id | TEXT | UUID 主键 / 目标图谱外键 |
+| document_id | TEXT / NULL | 原资料外键；资料删除后置空，出处快照仍保留 |
+| document_title / document_source_name | TEXT | 创建候选时的资料标题和文件名快照 |
+| section_position / source_locator | INTEGER / TEXT | 章节顺序与页码、EPUB 资源或文本行号 |
+| source_start_offset / source_end_offset | INTEGER | 完整章节正文中的精确字符区间 |
+| source_quote | TEXT | 1–2000 字的不可变原文依据快照 |
+| name / description | TEXT | 人工可编辑的候选概念内容 |
+| status | TEXT | `PENDING / ACCEPTED / IGNORED` |
+| accepted_node_id | TEXT / NULL | 确认写入后关联的正式概念；正式概念删除后置空 |
+| created_at / updated_at / reviewed_at | TEXT / NULL | 候选与审核时间线 |
+
+### candidate_relationships
+
+候选关系只允许连接同一图谱内两个 `PENDING` 候选概念，方向固定为 `PREREQUISITE`。记录同样具有 `PENDING / ACCEPTED / IGNORED` 状态和可选 `accepted_edge_id`。忽略概念时，与其相连的待审核关系一并忽略；循环关系在创建和最终写入时都会被拒绝。
+
+最终确认在 `BEGIN IMMEDIATE` 事务中创建正式节点与关系、更新候选状态和图谱更新时间。写入前重新检查正式图谱重名、候选重名、悬空关系、循环及数量上限。候选记录不是学习 Evidence，不影响 learner state。
+
+## 计划中的独立实体（M7B+）
+
+- AI provider 配置、生成请求的授权范围与结构化输出审计
 
 `mastery` 和用户状态绝不进入 `knowledge_nodes`。Evidence 保留原始结果和出处，learner model 根据证据更新状态，从而允许解释任一掌握度。

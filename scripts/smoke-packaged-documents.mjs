@@ -106,12 +106,22 @@ async function launch(profile) {
   const env = { ...globalThis.process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+  const output = [];
   const process = spawn(executable, [
     `--user-data-dir=${profile}`,
+    // The sandboxed CI account may not be allowed to initialize the host GPU
+    // runtime; rendering itself is not under test here.
+    '--disable-gpu',
     '--remote-debugging-address=127.0.0.1',
     `--remote-debugging-port=${rendererPort}`,
     `--inspect=127.0.0.1:${mainPort}`,
-  ], { cwd: dirname(executable), env, windowsHide: true, stdio: 'ignore' });
+  ], { cwd: dirname(executable), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const rememberOutput = (chunk) => {
+    output.push(chunk.toString());
+    if (output.length > 100) output.shift();
+  };
+  process.stdout.on('data', rememberOutput);
+  process.stderr.on('data', rememberOutput);
   let main;
   let renderer;
   try {
@@ -127,8 +137,15 @@ async function launch(profile) {
   } catch (error) {
     main?.close();
     renderer?.close();
+    const exited = process.exitCode !== null
+      ? Promise.resolve()
+      : new Promise((done) => process.once('exit', done));
     process.kill();
-    throw error;
+    await Promise.race([exited, delay(5_000)]);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}${output.length ? `\nEXE 输出：\n${output.join('')}` : ''}`,
+      { cause: error },
+    );
   }
 }
 
@@ -153,6 +170,10 @@ function selectFile(app, path) {
 
 function call(app, expression) {
   return app.renderer.evaluate(`window.openLearnGraph.documents.${expression}`);
+}
+
+function apiCall(app, namespace, expression) {
+  return app.renderer.evaluate(`window.openLearnGraph.${namespace}.${expression}`);
 }
 
 async function waitForUi(app, expression) {
@@ -235,6 +256,8 @@ async function main() {
     }
     console.log('通过：扫描件、损坏 EPUB、损坏 PDF 和伪造 PDF 的反馈');
 
+    const candidateGraph = await apiCall(app, 'graphs', `create(${JSON.stringify({ name: '资料候选图谱' })})`);
+
     await stop(app);
     app = null;
     app = await launch(profile);
@@ -264,12 +287,80 @@ async function main() {
     await waitForUi(app, "document.querySelector('.document-search-results')?.textContent?.includes('匹配章节') === true");
     await waitForUi(app, "document.querySelector('.document-reader mark')?.textContent === '模型'");
     console.log('通过：正式界面可打开正文并搜索定位');
+
+    await app.renderer.evaluate(`(() => {
+      const mark = document.querySelector('.document-reader mark');
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(mark);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      mark.closest('pre').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      return true;
+    })()`);
+    await waitForUi(app, "document.querySelector('.candidate-from-selection')?.textContent?.includes('创建候选概念') === true");
+    await app.renderer.evaluate("document.querySelector('.candidate-from-selection').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.candidate-workspace'))");
+    const firstWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
+    assert.equal(firstWorkspace.pendingConceptCount, 1);
+    assert.equal(firstWorkspace.concepts[0].sourceQuote, '模型');
+    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭候选图谱\"]').click(); true");
+    await waitForUi(app, "!document.querySelector('.candidate-workspace')");
+
+    const textSection = await call(app, `getSection(${JSON.stringify(ids[3])}, 0, 0)`);
+    const quote = '学习规律';
+    const sourceCharacters = Array.from(textSection.content);
+    const sourceStartOffset = sourceCharacters.join('').indexOf(quote);
+    assert(sourceStartOffset >= 0);
+    await apiCall(app, 'candidates', `createConcept(${JSON.stringify({
+      graphId: candidateGraph.id,
+      documentId: ids[3],
+      sectionPosition: 0,
+      sourceStartOffset,
+      sourceEndOffset: sourceStartOffset + Array.from(quote).length,
+      name: quote,
+      description: '从数据中概括可复用模式。',
+    })})`);
+    let candidateWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
+    const modelCandidate = candidateWorkspace.concepts.find((item) => item.name === '模型');
+    const patternCandidate = candidateWorkspace.concepts.find((item) => item.name === quote);
+    assert(modelCandidate && patternCandidate);
+    await apiCall(app, 'candidates', `createRelationship(${JSON.stringify({
+      graphId: candidateGraph.id,
+      sourceCandidateId: modelCandidate.id,
+      targetCandidateId: patternCandidate.id,
+    })})`);
+
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '候选图谱').click(); true");
+    await waitForUi(app, "document.querySelectorAll('.candidate-card').length === 2 && document.querySelectorAll('.candidate-relation-list li').length === 1");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('确认写入')).click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('[role=alertdialog]'))");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).find((button) => button.textContent.includes('确认写入图谱')).click(); true");
+    await waitForUi(app, "document.querySelector('.candidate-workspace > footer')?.textContent?.includes('0 个概念') === true");
+    const acceptedGraph = await apiCall(app, 'graphs', `load(${JSON.stringify(candidateGraph.id)})`);
+    assert.equal(acceptedGraph.nodes.length, 2);
+    assert.equal(acceptedGraph.edges.length, 1);
+    candidateWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
+    assert.equal(candidateWorkspace.pendingConceptCount, 0);
+    assert(candidateWorkspace.concepts.every((item) => item.status === 'ACCEPTED'));
+    console.log('通过：界面原文选区、候选关系审核与事务写入');
+
+    await stop(app);
+    app = null;
+    app = await launch(profile);
+    const persistedGraph = await apiCall(app, 'graphs', `load(${JSON.stringify(candidateGraph.id)})`);
+    const persistedWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
+    assert.equal(persistedGraph.nodes.length, 2);
+    assert.equal(persistedGraph.edges.length, 1);
+    assert.equal(persistedWorkspace.concepts.find((item) => item.name === '模型').sourceQuote, '模型');
+    assert(persistedWorkspace.concepts.every((item) => item.status === 'ACCEPTED'));
+    console.log('通过：重启 EXE 后正式图谱、审核历史和原文快照仍在');
   } finally {
     await stop(app);
     // Delete only the unique directory created by this run, never a user profile.
     assert.equal(dirname(resolve(root)).toLowerCase(), resolve(tmpdir()).toLowerCase());
     assert(basename(root).startsWith('openlearngraph-smoke-'));
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 

@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   DocumentPreviewView,
   DocumentSectionView,
   ImportedDocumentView,
+  KnowledgeGraphDocument,
   OpenLearnGraphApi,
 } from '../src/shared/contracts';
 import { DocumentLibrary } from '../src/renderer/features/documents/DocumentLibrary';
@@ -56,6 +58,26 @@ const imported: ImportedDocumentView = {
   warnings: preview.warnings,
 };
 
+const graph: KnowledgeGraphDocument = {
+  id: '33333333-3333-4333-8333-333333333333',
+  name: '测试图谱',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  nodes: [],
+  edges: [],
+};
+
+function libraryProps(overrides: Partial<ComponentProps<typeof DocumentLibrary>> = {}): ComponentProps<typeof DocumentLibrary> {
+  return {
+    activeGraph: graph,
+    structureDirty: false,
+    onClose: vi.fn(),
+    onGraphUpdated: vi.fn(),
+    onMessage: vi.fn(),
+    ...overrides,
+  };
+}
+
 const firstSection: DocumentSectionView = {
   position: 0,
   heading: '第一章',
@@ -87,7 +109,22 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
     delete: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
-  window.openLearnGraph = { documents } as unknown as OpenLearnGraphApi;
+  const emptyWorkspace = {
+    concepts: [], relationships: [], pendingConceptCount: 0,
+    pendingRelationshipCount: 0, blockingIssues: [],
+  };
+  window.openLearnGraph = {
+    documents,
+    candidates: {
+      getWorkspace: vi.fn().mockResolvedValue(emptyWorkspace),
+      createConcept: vi.fn().mockResolvedValue(emptyWorkspace),
+      updateConcept: vi.fn().mockResolvedValue(emptyWorkspace),
+      reviewConcept: vi.fn().mockResolvedValue(emptyWorkspace),
+      createRelationship: vi.fn().mockResolvedValue(emptyWorkspace),
+      deleteRelationship: vi.fn().mockResolvedValue(emptyWorkspace),
+      apply: vi.fn(),
+    },
+  } as unknown as OpenLearnGraphApi;
   return documents;
 }
 
@@ -95,7 +132,7 @@ describe('DocumentLibrary', () => {
   it('previews extracted text, allows metadata correction, and confirms import', async () => {
     const documents = installApi();
     const onMessage = vi.fn();
-    render(<DocumentLibrary onClose={vi.fn()} onMessage={onMessage} />);
+    render(<DocumentLibrary {...libraryProps({ onMessage })} />);
     expect(await screen.findByText('还没有导入资料')).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: '选择第一份资料' }));
@@ -129,7 +166,7 @@ describe('DocumentLibrary', () => {
       duplicateDocumentTitle: imported.title,
     };
     const documents = installApi({ chooseFile: vi.fn().mockResolvedValue(duplicatePreview) });
-    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    render(<DocumentLibrary {...libraryProps()} />);
     fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
     expect(await screen.findByText(duplicatePreview.blockedReason as string)).toBeVisible();
     expect(screen.getByRole('button', { name: '确认导入资料库' })).toBeDisabled();
@@ -141,7 +178,7 @@ describe('DocumentLibrary', () => {
   it('asks before discarding edited preview metadata', async () => {
     const onClose = vi.fn();
     installApi();
-    render(<DocumentLibrary onClose={onClose} onMessage={vi.fn()} />);
+    render(<DocumentLibrary {...libraryProps({ onClose })} />);
     fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
     await screen.findByLabelText('标题');
     fireEvent.change(screen.getByLabelText('标题'), { target: { value: '尚未保存的新标题' } });
@@ -180,7 +217,7 @@ describe('DocumentLibrary', () => {
         }
       )),
     });
-    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    render(<DocumentLibrary {...libraryProps()} />);
     fireEvent.click(await screen.findByRole('button', { name: '选择第一份资料' }));
     expect(await screen.findByText(/当前仅展示前 1 \/ 13 节/)).toBeVisible();
     expect(screen.getByText(/前 6,000 个字符/)).toBeVisible();
@@ -224,7 +261,7 @@ describe('DocumentLibrary', () => {
         hasMore: false,
       }),
     });
-    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    render(<DocumentLibrary {...libraryProps()} />);
     fireEvent.click(await screen.findByRole('button', { name: /长资料/ }));
     expect(await screen.findByText('章节目录 · 50 / 70')).toBeVisible();
     fireEvent.change(screen.getByLabelText('搜索正文'), { target: { value: '独有检索词' } });
@@ -247,11 +284,39 @@ describe('DocumentLibrary', () => {
       list: vi.fn().mockResolvedValue([imported]),
       search: vi.fn().mockRejectedValue(new Error('数据库暂时不可读')),
     });
-    render(<DocumentLibrary onClose={vi.fn()} onMessage={vi.fn()} />);
+    render(<DocumentLibrary {...libraryProps()} />);
     fireEvent.click(await screen.findByRole('button', { name: /学习指南（校对版）/ }));
     await screen.findByLabelText('搜索正文');
     fireEvent.change(screen.getByLabelText('搜索正文'), { target: { value: '正文' } });
     fireEvent.click(screen.getByRole('button', { name: '查找' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('资料搜索失败：数据库暂时不可读');
+  });
+
+  it('turns an exact text selection into a source-grounded candidate concept', async () => {
+    installApi({ list: vi.fn().mockResolvedValue([imported]) });
+    const candidates = window.openLearnGraph.candidates;
+    render(<DocumentLibrary {...libraryProps()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /学习指南（校对版）/ }));
+    const text = await screen.findByText('第一章的正文。');
+    const pre = text.closest('pre') as HTMLPreElement;
+    const textNode = pre.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 3);
+    const selection = window.getSelection() as Selection;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.mouseUp(pre);
+    fireEvent.click(screen.getByRole('button', { name: '创建候选概念（3 字）' }));
+    await waitFor(() => expect(candidates.createConcept).toHaveBeenCalledWith({
+      graphId: graph.id,
+      documentId: imported.id,
+      sectionPosition: 0,
+      sourceStartOffset: 0,
+      sourceEndOffset: 3,
+      name: '第一章',
+      description: '',
+    }));
+    expect(await screen.findByRole('dialog', { name: /候选概念/ })).toBeVisible();
   });
 });

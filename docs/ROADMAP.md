@@ -11,7 +11,8 @@
 - **M5B — Formative practice loop（完成）**：题目用途隔离、即时反馈、练习/回顾/补强、跨重启恢复、形成性证据与重新诊断闭环。
 - **M6A — Reliable local document import（完成）**：PDF/EPUB/Markdown/TXT 的本地确定性提取、元数据与章节/页码保留、导入前预览、编码识别、重复检测及扫描 PDF 提示；已导入正文可按需完整阅读、搜索与定位。
 - **M6B — Extended document extraction**：DOCX、本地 OCR，以及更完整的表格与复杂版面保留。
-- **M7 — AI Knowledge Graph generation**：候选图谱、人工审核与编辑。
+- **M7A — Source-grounded candidate graph review（完成）**：从本地资料原文创建候选概念，保留可导航出处，编辑/忽略/恢复候选项，审核先修关系，并在重名和循环检查后原子写入正式图谱；不调用 AI。
+- **M7B — AI-assisted candidate generation**：以可配置的云端 provider（优先 DeepSeek）从用户明确授权的资料范围提出结构化候选；发送前预览、schema 验证、失败回退和人工审核边界保持不变。
 - **M8 — Source-grounded learning / RAG**：来源支撑的检索与教学。
 - **M9 — Review scheduling**：复习调度与遗忘模型。
 - **M10 — Windows release**：安装体验、签名、无障碍、性能、发布流程与开源完善。

@@ -4,10 +4,13 @@ import {
   type CompleteDiagnosticInput,
   type CompleteLearningSessionInput,
   type ConfirmDocumentImportInput,
+  type CreateCandidateConceptInput,
+  type CreateCandidateRelationshipInput,
   type CreateGraphInput,
   type OpenLearnGraphApi,
   type RecordLearningEvidenceInput,
   type RespondTutorDecisionInput,
+  type ReviewCandidateConceptInput,
   type SavePracticeAnswerInput,
   type SaveAssessmentQuestionInput,
   type SaveDiagnosticAnswerInput,
@@ -16,6 +19,7 @@ import {
   type StartLearningSessionInput,
   type StartDiagnosticInput,
   type StartPracticeInput,
+  type UpdateCandidateConceptInput,
 } from '../shared/contracts';
 
 const api: OpenLearnGraphApi = {
@@ -74,6 +78,15 @@ const api: OpenLearnGraphApi = {
     confirmImport: (input: ConfirmDocumentImportInput) => ipcRenderer.invoke(IPC_CHANNELS.documentImportConfirm, input),
     discardPreview: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.documentPreviewDiscard, previewToken),
     delete: (documentId: string) => ipcRenderer.invoke(IPC_CHANNELS.documentDelete, documentId),
+  },
+  candidates: {
+    getWorkspace: (graphId: string, documentId?: string) => ipcRenderer.invoke(IPC_CHANNELS.candidateWorkspaceGet, graphId, documentId),
+    createConcept: (input: CreateCandidateConceptInput) => ipcRenderer.invoke(IPC_CHANNELS.candidateConceptCreate, input),
+    updateConcept: (input: UpdateCandidateConceptInput) => ipcRenderer.invoke(IPC_CHANNELS.candidateConceptUpdate, input),
+    reviewConcept: (input: ReviewCandidateConceptInput) => ipcRenderer.invoke(IPC_CHANNELS.candidateConceptReview, input),
+    createRelationship: (input: CreateCandidateRelationshipInput) => ipcRenderer.invoke(IPC_CHANNELS.candidateRelationshipCreate, input),
+    deleteRelationship: (relationshipId: string) => ipcRenderer.invoke(IPC_CHANNELS.candidateRelationshipDelete, relationshipId),
+    apply: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.candidateWorkspaceApply, graphId),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

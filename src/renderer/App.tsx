@@ -756,7 +756,16 @@ export function App(): React.JSX.Element {
       )}
       {documentLibraryOpen && (
         <DocumentLibrary
+          activeGraph={graph}
+          structureDirty={dirty}
           onClose={() => setDocumentLibraryOpen(false)}
+          onGraphUpdated={(updatedGraph) => {
+            setGraph(updatedGraph);
+            setGraphs((current) => [toSummary(updatedGraph), ...current.filter((item) => item.id !== updatedGraph.id)]);
+            setDirty(false);
+            setEvidenceState(null);
+            setRecommendationRevision((current) => current + 1);
+          }}
           onMessage={showNotice}
         />
       )}

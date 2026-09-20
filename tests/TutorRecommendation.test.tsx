@@ -92,6 +92,10 @@ function installTutorApi(): OpenLearnGraphApi {
       search: vi.fn(), chooseFile: vi.fn(), confirmImport: vi.fn(),
       discardPreview: vi.fn(), delete: vi.fn(),
     },
+    candidates: {
+      getWorkspace: vi.fn(), createConcept: vi.fn(), updateConcept: vi.fn(),
+      reviewConcept: vi.fn(), createRelationship: vi.fn(), deleteRelationship: vi.fn(), apply: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;

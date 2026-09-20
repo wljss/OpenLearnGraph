@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import {
+  createCandidateConceptInputSchema,
+  createCandidateRelationshipInputSchema,
   completeDiagnosticInputSchema,
   completeLearningSessionInputSchema,
   confirmDocumentImportInputSchema,
@@ -54,6 +56,32 @@ describe('saveGraphInputSchema', () => {
     const result = saveGraphInputSchema.safeParse(cyclic);
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.issues.some((issue) => issue.message.includes('循环'))).toBe(true);
+  });
+});
+
+describe('candidate graph schemas', () => {
+  const documentId = '77777777-7777-4777-8777-777777777777';
+  const candidateId = '88888888-8888-4888-8888-888888888888';
+  const secondCandidateId = '99999999-9999-4999-8999-999999999999';
+
+  it('accepts bounded source selections and rejects forged ranges', () => {
+    const input = {
+      graphId, documentId, sectionPosition: 0,
+      sourceStartOffset: 10, sourceEndOffset: 20,
+      name: '向量', description: '',
+    };
+    expect(createCandidateConceptInputSchema.safeParse(input).success).toBe(true);
+    expect(createCandidateConceptInputSchema.safeParse({ ...input, sourceEndOffset: 10 }).success).toBe(false);
+    expect(createCandidateConceptInputSchema.safeParse({ ...input, sourceEndOffset: 2011 }).success).toBe(false);
+  });
+
+  it('rejects candidate self relationships', () => {
+    expect(createCandidateRelationshipInputSchema.safeParse({
+      graphId, sourceCandidateId: candidateId, targetCandidateId: secondCandidateId,
+    }).success).toBe(true);
+    expect(createCandidateRelationshipInputSchema.safeParse({
+      graphId, sourceCandidateId: candidateId, targetCandidateId: candidateId,
+    }).success).toBe(false);
   });
 });
 

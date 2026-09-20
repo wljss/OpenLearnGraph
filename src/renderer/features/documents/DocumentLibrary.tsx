@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  CandidateConceptView,
   DocumentPreviewView,
   DocumentSearchView,
   DocumentSectionPreviewView,
@@ -7,12 +8,17 @@ import type {
   DocumentSectionView,
   ImportedDocumentSummaryView,
   ImportedDocumentView,
+  KnowledgeGraphDocument,
 } from '../../../shared/contracts';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { errorMessage } from '../../errorMessage';
+import { CandidateWorkspace } from './CandidateWorkspace';
 
 interface DocumentLibraryProps {
+  activeGraph: KnowledgeGraphDocument | null;
+  structureDirty: boolean;
   onClose: () => void;
+  onGraphUpdated: (graph: KnowledgeGraphDocument) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
 
@@ -90,8 +96,14 @@ function SectionReader({ sections, totalSections }: {
   );
 }
 
-function ImportedDocumentReader({ document, onMessage }: {
+function ImportedDocumentReader({
+  document, graph, structureDirty, initialTarget, onCandidateCreated, onMessage,
+}: {
   document: ImportedDocumentView;
+  graph: KnowledgeGraphDocument | null;
+  structureDirty: boolean;
+  initialTarget?: { position: number; offset: number; highlight?: string };
+  onCandidateCreated: () => void;
   onMessage: DocumentLibraryProps['onMessage'];
 }): React.JSX.Element {
   const [sections, setSections] = useState<DocumentSectionSummaryView[]>([]);
@@ -101,19 +113,26 @@ function ImportedDocumentReader({ document, onMessage }: {
   const [loadingSection, setLoadingSection] = useState(false);
   const [jumpTarget, setJumpTarget] = useState('');
   const [query, setQuery] = useState('');
-  const [activeQuery, setActiveQuery] = useState('');
+  const [activeQuery, setActiveQuery] = useState(initialTarget?.highlight ?? '');
   const [searchResults, setSearchResults] = useState<DocumentSearchView | null>(null);
   const [searching, setSearching] = useState(false);
   const [readerError, setReaderError] = useState<string | null>(null);
+  const [sourceSelection, setSourceSelection] = useState<{
+    startOffset: number; endOffset: number; text: string;
+  } | null>(null);
+  const [creatingCandidate, setCreatingCandidate] = useState(false);
   const sectionRequest = useRef(0);
   const searchRequest = useRef(0);
   const markRef = useRef<HTMLElement | null>(null);
+  const textRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
     let active = true;
     void Promise.all([
       window.openLearnGraph.documents.listSections(document.id, 0),
-      window.openLearnGraph.documents.getSection(document.id, 0, 0),
+      window.openLearnGraph.documents.getSection(
+        document.id, initialTarget?.position ?? 0, initialTarget?.offset ?? 0,
+      ),
     ]).then(([headings, first]) => {
       if (!active) return;
       setSections(headings);
@@ -132,7 +151,7 @@ function ImportedDocumentReader({ document, onMessage }: {
       sectionRequest.current += 1;
       searchRequest.current += 1;
     };
-  }, [document.id, onMessage]);
+  }, [document.id, initialTarget?.offset, initialTarget?.position, onMessage]);
 
   useEffect(() => {
     markRef.current?.scrollIntoView?.({ block: 'center' });
@@ -146,6 +165,7 @@ function ImportedDocumentReader({ document, onMessage }: {
       const section = await window.openLearnGraph.documents.getSection(document.id, position, offset);
       if (request !== sectionRequest.current) return;
       setSelected(section);
+      setSourceSelection(null);
     } catch (error) {
       if (request === sectionRequest.current) {
         const message = `章节打开失败：${errorMessage(error)}`;
@@ -217,6 +237,72 @@ function ImportedDocumentReader({ document, onMessage }: {
       <mark ref={markRef}>{selected.content.slice(offset, offset + activeQuery.length)}</mark>
       {selected.content.slice(offset + activeQuery.length)}
     </>;
+  };
+
+  const captureSelection = (): void => {
+    const selection = window.getSelection();
+    const pre = textRef.current;
+    if (!selection || selection.isCollapsed || !selection.rangeCount || !pre) {
+      setSourceSelection(null);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!pre.contains(range.commonAncestorContainer)) {
+      setSourceSelection(null);
+      return;
+    }
+    const before = range.cloneRange();
+    before.selectNodeContents(pre);
+    before.setEnd(range.startContainer, range.startOffset);
+    const rawText = selection.toString();
+    const leadingText = rawText.slice(0, rawText.length - rawText.trimStart().length);
+    const text = rawText.trim();
+    if (!text || !selected) {
+      setSourceSelection(null);
+      return;
+    }
+    // SQLite's text offsets count Unicode code points, while JavaScript string
+    // lengths count UTF-16 code units. Keep persisted offsets compatible with
+    // document paging/search even when the source contains emoji or rare CJK.
+    const relativeStart = [...before.toString()].length + [...leadingText].length;
+    const startOffset = selected.startOffset + relativeStart;
+    setSourceSelection({
+      startOffset,
+      endOffset: startOffset + [...text].length,
+      text,
+    });
+  };
+
+  const createCandidate = async (): Promise<void> => {
+    if (!graph || !selected || !sourceSelection || structureDirty) return;
+    if ([...sourceSelection.text].length > 2_000) {
+      setReaderError('作为依据的原文一次最多选择 2000 个字符。');
+      return;
+    }
+    setCreatingCandidate(true);
+    setReaderError(null);
+    try {
+      const firstSentence = sourceSelection.text.split(/[。！？!?\n]/)[0]?.trim() || sourceSelection.text;
+      await window.openLearnGraph.candidates.createConcept({
+        graphId: graph.id,
+        documentId: document.id,
+        sectionPosition: selected.position,
+        sourceStartOffset: sourceSelection.startOffset,
+        sourceEndOffset: sourceSelection.endOffset,
+        name: firstSentence.slice(0, 160),
+        description: '',
+      });
+      window.getSelection()?.removeAllRanges();
+      setSourceSelection(null);
+      onMessage('已创建带原文出处的候选概念，请在写入图谱前审核。', 'success');
+      onCandidateCreated();
+    } catch (error) {
+      const message = `候选概念创建失败：${errorMessage(error)}`;
+      setReaderError(message);
+      onMessage(message, 'error');
+    } finally {
+      setCreatingCandidate(false);
+    }
   };
 
   return (
@@ -298,11 +384,20 @@ function ImportedDocumentReader({ document, onMessage }: {
       <article>
         {loading ? <p>正在读取章节与正文……</p> : selected ? <>
           <header>
-            <span>{document.sourceName} · {selected.locator} · 第 {selected.position + 1} / {document.sectionCount} 节</span>
-            <strong>{selected.heading}</strong>
+            <div><span>{document.sourceName} · {selected.locator} · 第 {selected.position + 1} / {document.sectionCount} 节</span>
+              <strong>{selected.heading}</strong></div>
+            <button
+              className="candidate-from-selection"
+              type="button"
+              disabled={creatingCandidate || !sourceSelection || !graph || structureDirty || [...sourceSelection.text].length > 2_000}
+              title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : sourceSelection ? '保留原文出处并进入人工审核' : '请先在正文中选中文字'}
+              onClick={() => void createCandidate()}
+            >
+              {creatingCandidate ? '创建中…' : sourceSelection ? `创建候选概念（${[...sourceSelection.text].length} 字）` : '选中文字后创建候选'}
+            </button>
           </header>
           {loadingSection && <p role="status">正在定位正文……</p>}
-          <pre>{highlightedContent()}</pre>
+          <pre ref={textRef} onMouseUp={captureSelection} onKeyUp={captureSelection}>{highlightedContent()}</pre>
           {(selected.previousOffset !== null || selected.nextOffset !== null) && (
             <nav className="document-chunk-navigation" aria-label="本节正文分页">
               <span>本节第 {(selected.startOffset + 1).toLocaleString('zh-CN')}–{selected.endOffset.toLocaleString('zh-CN')} / {selected.totalLength.toLocaleString('zh-CN')} 字符</span>
@@ -318,7 +413,9 @@ function ImportedDocumentReader({ document, onMessage }: {
   );
 }
 
-export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): React.JSX.Element {
+export function DocumentLibrary({
+  activeGraph, structureDirty, onClose, onGraphUpdated, onMessage,
+}: DocumentLibraryProps): React.JSX.Element {
   const [documents, setDocuments] = useState<ImportedDocumentSummaryView[]>([]);
   const [preview, setPreview] = useState<DocumentPreviewView | null>(null);
   const [detail, setDetail] = useState<ImportedDocumentView | null>(null);
@@ -327,6 +424,10 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
   const [busy, setBusy] = useState(false);
   const [discardConfirmation, setDiscardConfirmation] = useState<'close' | 'back' | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
+  const [candidateWorkspaceOpen, setCandidateWorkspaceOpen] = useState(false);
+  const [readerTarget, setReaderTarget] = useState<{
+    documentId: string; position: number; offset: number; highlight?: string;
+  } | null>(null);
 
   const loadDocuments = useCallback(async (): Promise<void> => {
     setDocuments(await window.openLearnGraph.documents.list());
@@ -389,10 +490,19 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
     }
   };
 
-  const openDocument = async (documentId: string): Promise<void> => {
+  const openDocument = async (
+    documentId: string,
+    target?: { position: number; offset: number; highlight?: string },
+  ): Promise<void> => {
     setBusy(true);
     try {
       setDetail(await window.openLearnGraph.documents.get(documentId));
+      setReaderTarget(target ? {
+        documentId,
+        position: target.position,
+        offset: target.offset,
+        highlight: target.highlight,
+      } : null);
       setPreview(null);
       setMetadata(null);
     } catch (error) {
@@ -417,6 +527,7 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
       setPreview(null);
       setMetadata(null);
       setDetail(imported);
+      setReaderTarget(null);
       await loadDocuments();
       onMessage(`“${imported.title}”已保存到本地资料库。`, 'success');
     } catch (error) {
@@ -450,9 +561,22 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
     setPreview(null);
     setMetadata(null);
     setDetail(null);
+    setReaderTarget(null);
   };
 
   const current = preview ?? detail;
+  const navigateToCandidateSource = (concept: CandidateConceptView): void => {
+    if (!concept.documentId) {
+      onMessage('原资料已删除；候选记录中仍保留原文快照和出处。', 'error');
+      return;
+    }
+    setCandidateWorkspaceOpen(false);
+    void openDocument(concept.documentId, {
+      position: concept.sectionPosition,
+      offset: Math.max(0, concept.sourceStartOffset - 80),
+      highlight: concept.sourceQuote,
+    });
+  };
   return (
     <>
       <div className="dialog-backdrop assessment-backdrop" role="presentation" onMouseDown={requestClose}>
@@ -470,6 +594,14 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
               <p>{current ? current.sourceName : '先预览提取结果，确认后才保存正文。支持 PDF、EPUB、Markdown 和 TXT。'}</p>
             </div>
             <div className="document-header-actions">
+              {activeGraph && !preview && (
+                <button
+                  type="button"
+                  disabled={busy || structureDirty}
+                  title={structureDirty ? '请先保存图谱结构' : '审核资料产生的候选概念和关系'}
+                  onClick={() => setCandidateWorkspaceOpen(true)}
+                >候选图谱</button>
+              )}
               {current && <button type="button" disabled={busy} onClick={returnToLibrary}>返回资料库</button>}
               <button className="modal-close" type="button" aria-label="关闭资料库" disabled={busy} onClick={requestClose}>×</button>
             </div>
@@ -552,7 +684,15 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
               )}
               {preview
                 ? <SectionReader sections={preview.sections} totalSections={preview.sectionCount} />
-                : detail && <ImportedDocumentReader key={detail.id} document={detail} onMessage={onMessage} />}
+                : detail && <ImportedDocumentReader
+                  key={`${detail.id}:${readerTarget?.position ?? 0}:${readerTarget?.offset ?? 0}`}
+                  document={detail}
+                  graph={activeGraph}
+                  structureDirty={structureDirty}
+                  initialTarget={readerTarget?.documentId === detail.id ? readerTarget : undefined}
+                  onCandidateCreated={() => setCandidateWorkspaceOpen(true)}
+                  onMessage={onMessage}
+                />}
 
               <footer className="document-review-footer">
                 <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改或上传</span>
@@ -596,6 +736,15 @@ export function DocumentLibrary({ onClose, onMessage }: DocumentLibraryProps): R
           destructive
           onCancel={() => setDeleteConfirmation(false)}
           onConfirm={() => void deleteDocument()}
+        />
+      )}
+      {candidateWorkspaceOpen && activeGraph && (
+        <CandidateWorkspace
+          graph={activeGraph}
+          onClose={() => setCandidateWorkspaceOpen(false)}
+          onNavigateSource={navigateToCandidateSource}
+          onGraphUpdated={onGraphUpdated}
+          onMessage={onMessage}
         />
       )}
     </>

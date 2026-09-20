@@ -385,6 +385,49 @@ const MIGRATION_7 = `
     ON imported_document_sections(document_id, position);
 `;
 
+const MIGRATION_8 = `
+  CREATE TABLE candidate_concepts (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES knowledge_graphs(id) ON DELETE CASCADE,
+    document_id TEXT REFERENCES imported_documents(id) ON DELETE SET NULL,
+    document_title TEXT NOT NULL CHECK (length(trim(document_title)) > 0),
+    document_source_name TEXT NOT NULL CHECK (length(trim(document_source_name)) > 0),
+    section_position INTEGER NOT NULL CHECK (section_position >= 0),
+    source_locator TEXT NOT NULL,
+    source_start_offset INTEGER NOT NULL CHECK (source_start_offset >= 0),
+    source_end_offset INTEGER NOT NULL CHECK (source_end_offset > source_start_offset),
+    source_quote TEXT NOT NULL CHECK (length(source_quote) BETWEEN 1 AND 2000),
+    name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+    description TEXT NOT NULL DEFAULT '' CHECK (length(description) <= 10000),
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'IGNORED')),
+    accepted_node_id TEXT REFERENCES knowledge_nodes(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    reviewed_at TEXT
+  ) STRICT;
+  CREATE INDEX idx_candidate_concepts_graph_status
+    ON candidate_concepts(graph_id, status, created_at);
+  CREATE INDEX idx_candidate_concepts_document
+    ON candidate_concepts(document_id, section_position);
+
+  CREATE TABLE candidate_relationships (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES knowledge_graphs(id) ON DELETE CASCADE,
+    source_candidate_id TEXT NOT NULL REFERENCES candidate_concepts(id) ON DELETE CASCADE,
+    target_candidate_id TEXT NOT NULL REFERENCES candidate_concepts(id) ON DELETE CASCADE,
+    relationship TEXT NOT NULL CHECK (relationship = 'PREREQUISITE'),
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'IGNORED')),
+    accepted_edge_id TEXT REFERENCES knowledge_edges(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    CHECK (source_candidate_id <> target_candidate_id),
+    UNIQUE (graph_id, source_candidate_id, target_candidate_id, relationship)
+  ) STRICT;
+  CREATE INDEX idx_candidate_relationships_graph_status
+    ON candidate_relationships(graph_id, status, created_at);
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -460,6 +503,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_7);
       database.exec('PRAGMA user_version = 7;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 8) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_8);
+      database.exec('PRAGMA user_version = 8;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

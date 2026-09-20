@@ -125,6 +125,10 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       discardPreview: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
     },
+    candidates: {
+      getWorkspace: vi.fn(), createConcept: vi.fn(), updateConcept: vi.fn(),
+      reviewConcept: vi.fn(), createRelationship: vi.fn(), deleteRelationship: vi.fn(), apply: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;

@@ -106,6 +106,48 @@ export const confirmDocumentImportInputSchema = z.object({
   language: z.string().trim().max(80, '语言信息不能超过 80 字'),
   identifier: z.string().trim().max(200, '标识符不能超过 200 字'),
 });
+export const CANDIDATE_STATUSES = ['PENDING', 'ACCEPTED', 'IGNORED'] as const;
+export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
+export const candidateConceptIdInputSchema = z.object({
+  candidateId: z.string().uuid('候选概念 ID 无效'),
+});
+export const candidateRelationshipIdInputSchema = z.object({
+  relationshipId: z.string().uuid('候选关系 ID 无效'),
+});
+export const candidateWorkspaceInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  documentId: documentIdInputSchema.shape.documentId.optional(),
+});
+export const createCandidateConceptInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  documentId: documentIdInputSchema.shape.documentId,
+  sectionPosition: z.number().int().min(0).max(4_999),
+  sourceStartOffset: z.number().int().min(0).max(9_999_999),
+  sourceEndOffset: z.number().int().min(1).max(10_000_000),
+  name: z.string().trim().min(1, '候选概念名称不能为空').max(160, '候选概念名称不能超过 160 字'),
+  description: z.string().trim().max(10_000, '候选概念描述不能超过 10000 字'),
+}).superRefine((input, context) => {
+  const length = input.sourceEndOffset - input.sourceStartOffset;
+  if (length < 1 || length > 2_000) {
+    context.addIssue({ code: 'custom', message: '请选择 1–2000 个字符作为原文依据', path: ['sourceEndOffset'] });
+  }
+});
+export const updateCandidateConceptInputSchema = z.object({
+  candidateId: candidateConceptIdInputSchema.shape.candidateId,
+  name: z.string().trim().min(1, '候选概念名称不能为空').max(160, '候选概念名称不能超过 160 字'),
+  description: z.string().trim().max(10_000, '候选概念描述不能超过 10000 字'),
+});
+export const reviewCandidateConceptInputSchema = z.object({
+  candidateId: candidateConceptIdInputSchema.shape.candidateId,
+  status: z.enum(['PENDING', 'IGNORED']),
+});
+export const createCandidateRelationshipInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  sourceCandidateId: candidateConceptIdInputSchema.shape.candidateId,
+  targetCandidateId: candidateConceptIdInputSchema.shape.candidateId,
+}).refine((input) => input.sourceCandidateId !== input.targetCandidateId, {
+  message: '先修概念和后续概念不能相同', path: ['targetCandidateId'],
+});
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
   nodeIds: z.array(nodeIdInputSchema.shape.nodeId)
@@ -225,6 +267,10 @@ export type CompleteLearningSessionInput = z.infer<typeof completeLearningSessio
 export type StartPracticeInput = z.infer<typeof startPracticeInputSchema>;
 export type SavePracticeAnswerInput = z.infer<typeof savePracticeAnswerInputSchema>;
 export type ConfirmDocumentImportInput = z.infer<typeof confirmDocumentImportInputSchema>;
+export type CreateCandidateConceptInput = z.infer<typeof createCandidateConceptInputSchema>;
+export type UpdateCandidateConceptInput = z.infer<typeof updateCandidateConceptInputSchema>;
+export type ReviewCandidateConceptInput = z.infer<typeof reviewCandidateConceptInputSchema>;
+export type CreateCandidateRelationshipInput = z.infer<typeof createCandidateRelationshipInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -505,6 +551,48 @@ export interface DocumentSearchView {
   hits: DocumentSearchHitView[];
   hasMore: boolean;
 }
+export interface CandidateConceptView {
+  id: string;
+  graphId: string;
+  documentId: string | null;
+  documentTitle: string;
+  documentSourceName: string;
+  sectionPosition: number;
+  sourceLocator: string;
+  sourceStartOffset: number;
+  sourceEndOffset: number;
+  sourceQuote: string;
+  name: string;
+  description: string;
+  status: CandidateStatus;
+  acceptedNodeId: string | null;
+  duplicateNodeId: string | null;
+  duplicateNodeName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CandidateRelationshipView {
+  id: string;
+  graphId: string;
+  sourceCandidateId: string;
+  targetCandidateId: string;
+  relationship: 'PREREQUISITE';
+  status: CandidateStatus;
+  acceptedEdgeId: string | null;
+  createdAt: string;
+}
+export interface CandidateWorkspaceView {
+  concepts: CandidateConceptView[];
+  relationships: CandidateRelationshipView[];
+  pendingConceptCount: number;
+  pendingRelationshipCount: number;
+  blockingIssues: string[];
+}
+export interface ApplyCandidateWorkspaceResult {
+  graph: KnowledgeGraphDocument;
+  acceptedConceptCount: number;
+  acceptedRelationshipCount: number;
+}
 export interface TutorDecisionView {
   id: string;
   graphId: string;
@@ -578,6 +666,15 @@ export interface OpenLearnGraphApi {
     discardPreview(previewToken: string): Promise<void>;
     delete(documentId: string): Promise<void>;
   };
+  candidates: {
+    getWorkspace(graphId: string, documentId?: string): Promise<CandidateWorkspaceView>;
+    createConcept(input: CreateCandidateConceptInput): Promise<CandidateWorkspaceView>;
+    updateConcept(input: UpdateCandidateConceptInput): Promise<CandidateWorkspaceView>;
+    reviewConcept(input: ReviewCandidateConceptInput): Promise<CandidateWorkspaceView>;
+    createRelationship(input: CreateCandidateRelationshipInput): Promise<CandidateWorkspaceView>;
+    deleteRelationship(relationshipId: string): Promise<CandidateWorkspaceView>;
+    apply(graphId: string): Promise<ApplyCandidateWorkspaceResult>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -605,5 +702,9 @@ export const IPC_CHANNELS = {
   documentSearch: 'document:search', documentChoose: 'document:choose',
   documentImportConfirm: 'document:import-confirm', documentPreviewDiscard: 'document:preview-discard',
   documentDelete: 'document:delete',
+  candidateWorkspaceGet: 'candidate:workspace-get', candidateConceptCreate: 'candidate:concept-create',
+  candidateConceptUpdate: 'candidate:concept-update', candidateConceptReview: 'candidate:concept-review',
+  candidateRelationshipCreate: 'candidate:relationship-create',
+  candidateRelationshipDelete: 'candidate:relationship-delete', candidateWorkspaceApply: 'candidate:workspace-apply',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
 import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
+import { registerCandidateIpc } from './ipc/registerCandidateIpc';
 import { registerDocumentIpc } from './ipc/registerDocumentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
@@ -11,6 +12,7 @@ import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
+import { CandidateRepository } from './repositories/candidateRepository';
 import { DocumentRepository } from './repositories/documentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
@@ -18,6 +20,7 @@ import { PracticeRepository } from './repositories/practiceRepository';
 import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
+import { CandidateService } from './services/candidateService';
 import { DocumentService } from './services/documentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
@@ -80,6 +83,7 @@ void app.whenReady().then(() => {
   const sessionRepository = new SessionRepository(database);
   const practiceRepository = new PracticeRepository(database);
   const documentRepository = new DocumentRepository(database);
+  const candidateRepository = new CandidateRepository(database, graphRepository);
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
@@ -109,6 +113,7 @@ void app.whenReady().then(() => {
     tutorRepository,
   ));
   registerDocumentIpc(new DocumentService(documentRepository));
+  registerCandidateIpc(new CandidateService(candidateRepository));
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {
