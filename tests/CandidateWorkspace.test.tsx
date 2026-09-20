@@ -23,7 +23,7 @@ const workspace: CandidateWorkspaceView = {
       documentId: '44444444-4444-4444-8444-444444444444',
       documentTitle: '课程资料', documentSourceName: 'course.md', sectionPosition: 0,
       sourceLocator: '第 1–4 行', sourceStartOffset: 0, sourceEndOffset: 4,
-      sourceQuote: '线性回归', name: '线性回归', description: '', status: 'PENDING',
+      sourceQuote: '线性回归', name: '线性回归', description: '', origin: 'MANUAL', sourceModel: null, status: 'PENDING',
       acceptedNodeId: null, duplicateNodeId: null, duplicateNodeName: null,
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     },
@@ -32,7 +32,7 @@ const workspace: CandidateWorkspaceView = {
       documentId: '44444444-4444-4444-8444-444444444444',
       documentTitle: '课程资料', documentSourceName: 'course.md', sectionPosition: 1,
       sourceLocator: '第 5–8 行', sourceStartOffset: 0, sourceEndOffset: 4,
-      sourceQuote: '梯度下降', name: '梯度下降', description: '', status: 'PENDING',
+      sourceQuote: '梯度下降', name: '梯度下降', description: '', origin: 'MANUAL', sourceModel: null, status: 'PENDING',
       acceptedNodeId: null, duplicateNodeId: null, duplicateNodeName: null,
       createdAt: '2026-01-01T00:01:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z',
     },
@@ -157,6 +157,7 @@ describe('CandidateWorkspace', () => {
     />);
     fireEvent.click(await screen.findByText(/审核历史（2 个概念 · 1 条关系）/));
     expect(screen.getByText('先修关系记录')).toBeVisible();
-    expect(screen.getAllByText('已写入图谱')).toHaveLength(3);
+    expect(screen.getByText('已写入图谱')).toBeVisible();
+    expect(screen.getAllByText(/已写入图谱/)).toHaveLength(3);
   });
 });

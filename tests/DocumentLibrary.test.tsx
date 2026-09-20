@@ -124,6 +124,29 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
       deleteRelationship: vi.fn().mockResolvedValue(emptyWorkspace),
       apply: vi.fn(),
     },
+    ai: {
+      getSettings: vi.fn().mockResolvedValue({
+        provider: 'DEEPSEEK', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash',
+        configured: true, secureStorageAvailable: true,
+      }),
+      saveSettings: vi.fn(), clearApiKey: vi.fn(), testConnection: vi.fn(),
+      previewCandidateGeneration: vi.fn().mockResolvedValue({
+        previewToken: '77777777-7777-4777-8777-777777777777',
+        documentId: imported.id,
+        documentTitle: imported.title,
+        documentSourceName: imported.sourceName,
+        model: 'deepseek-flash',
+        sections: [{ position: 0, heading: '第一章', locator: '第 1–5 行', charCount: 8 }],
+        totalCharCount: 8,
+        excerpt: '第一章的正文。',
+        expiresAt: '2026-01-02T00:10:00.000Z',
+      }),
+      generateCandidates: vi.fn().mockResolvedValue({
+        workspace: emptyWorkspace, provider: 'DEEPSEEK', model: 'deepseek-flash',
+        conceptCount: 2, relationshipCount: 1, promptTokens: 100, completionTokens: 30,
+      }),
+      cancelCandidateGeneration: vi.fn().mockResolvedValue(undefined),
+    },
   } as unknown as OpenLearnGraphApi;
   return documents;
 }
@@ -317,6 +340,26 @@ describe('DocumentLibrary', () => {
       name: '第一章',
       description: '',
     }));
+    expect(await screen.findByRole('dialog', { name: /候选概念/ })).toBeVisible();
+  });
+
+  it('shows the exact cloud upload scope before asking DeepSeek to generate candidates', async () => {
+    installApi({ list: vi.fn().mockResolvedValue([imported]) });
+    const ai = window.openLearnGraph.ai;
+    render(<DocumentLibrary {...libraryProps()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /学习指南（校对版）/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 提取本节' }));
+    expect(await screen.findByRole('dialog', { name: 'AI 生成候选概念' })).toBeVisible();
+    expect(screen.getAllByText('第 1–5 行 · 8 字符')).toHaveLength(2);
+    expect(ai.previewCandidateGeneration).toHaveBeenCalledWith({
+      graphId: graph.id,
+      documentId: imported.id,
+      sectionPositions: [0],
+    });
+    expect(ai.generateCandidates).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '确认发送并生成' }));
+    await waitFor(() => expect(ai.generateCandidates).toHaveBeenCalledWith('77777777-7777-4777-8777-777777777777'));
     expect(await screen.findByRole('dialog', { name: /候选概念/ })).toBeVisible();
   });
 });

@@ -4,6 +4,7 @@ import {
   type CompleteDiagnosticInput,
   type CompleteLearningSessionInput,
   type ConfirmDocumentImportInput,
+  type PreviewAiCandidateGenerationInput,
   type CreateCandidateConceptInput,
   type CreateCandidateRelationshipInput,
   type CreateGraphInput,
@@ -12,6 +13,7 @@ import {
   type RespondTutorDecisionInput,
   type ReviewCandidateConceptInput,
   type SavePracticeAnswerInput,
+  type SaveAiSettingsInput,
   type SaveAssessmentQuestionInput,
   type SaveDiagnosticAnswerInput,
   type SaveGraphInput,
@@ -87,6 +89,15 @@ const api: OpenLearnGraphApi = {
     createRelationship: (input: CreateCandidateRelationshipInput) => ipcRenderer.invoke(IPC_CHANNELS.candidateRelationshipCreate, input),
     deleteRelationship: (relationshipId: string) => ipcRenderer.invoke(IPC_CHANNELS.candidateRelationshipDelete, relationshipId),
     apply: (graphId: string) => ipcRenderer.invoke(IPC_CHANNELS.candidateWorkspaceApply, graphId),
+  },
+  ai: {
+    getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.aiSettingsGet),
+    saveSettings: (input: SaveAiSettingsInput) => ipcRenderer.invoke(IPC_CHANNELS.aiSettingsSave, input),
+    clearApiKey: () => ipcRenderer.invoke(IPC_CHANNELS.aiApiKeyClear),
+    testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.aiConnectionTest),
+    previewCandidateGeneration: (input: PreviewAiCandidateGenerationInput) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidatePreview, input),
+    generateCandidates: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateGenerate, previewToken),
+    cancelCandidateGeneration: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateCancel, previewToken),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

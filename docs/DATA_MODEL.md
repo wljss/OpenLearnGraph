@@ -191,6 +191,7 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 | source_start_offset / source_end_offset | INTEGER | 完整章节正文中的精确字符区间 |
 | source_quote | TEXT | 1–2000 字的不可变原文依据快照 |
 | name / description | TEXT | 人工可编辑的候选概念内容 |
+| origin / source_model | TEXT / TEXT / NULL | `MANUAL / AI` 来源；AI 候选记录实际使用的模型 |
 | status | TEXT | `PENDING / ACCEPTED / IGNORED` |
 | accepted_node_id | TEXT / NULL | 确认写入后关联的正式概念；正式概念删除后置空 |
 | created_at / updated_at / reviewed_at | TEXT / NULL | 候选与审核时间线 |
@@ -201,8 +202,12 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 最终确认在 `BEGIN IMMEDIATE` 事务中创建正式节点与关系、更新候选状态和图谱更新时间。写入前重新检查正式图谱重名、候选重名、悬空关系、循环及数量上限。候选记录不是学习 Evidence，不影响 learner state。
 
-## 计划中的独立实体（M7B+）
+## M7B AI 生成审计实体
 
-- AI provider 配置、生成请求的授权范围与结构化输出审计
+### ai_generation_runs
+
+每次用户确认后的云端生成均先创建审计记录。记录包含图谱、资料、provider、模型、用户确认的章节 ID、发送字符数、状态、token 用量、候选概念/关系数量、可读错误以及开始/结束时间；不保存 API Key、提示词、正文或模型原始响应。状态为 `IN_PROGRESS / SUCCEEDED / FAILED / CANCELLED`。
+
+DeepSeek 设置不进入 SQLite。模型选择与 Windows `safeStorage` 生成的 API Key 密文保存在 Electron `userData` 下的 `ai-settings.json`；main 只向 renderer 返回“是否已配置”和模型，不返回密钥或密文。
 
 `mastery` 和用户状态绝不进入 `knowledge_nodes`。Evidence 保留原始结果和出处，learner model 根据证据更新状态，从而允许解释任一掌握度。

@@ -62,7 +62,7 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
   return (
     <article className={`candidate-card candidate-${concept.status.toLocaleLowerCase()}`}>
       <header>
-        <span>{concept.status === 'PENDING' ? '待审核' : concept.status === 'ACCEPTED' ? '已写入图谱' : '已忽略'}</span>
+        <span>{concept.status === 'PENDING' ? '待审核' : concept.status === 'ACCEPTED' ? '已写入图谱' : '已忽略'}{concept.origin === 'AI' ? ` · AI ${concept.sourceModel ?? ''}` : ' · 手工'}</span>
         <button
           type="button"
           disabled={!concept.documentId}

@@ -108,6 +108,9 @@ export const confirmDocumentImportInputSchema = z.object({
 });
 export const CANDIDATE_STATUSES = ['PENDING', 'ACCEPTED', 'IGNORED'] as const;
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
+export type CandidateOrigin = 'MANUAL' | 'AI';
+export const DEEPSEEK_MODELS = ['deepseek-flash', 'deepseek-v4-pro'] as const;
+export type DeepSeekModel = (typeof DEEPSEEK_MODELS)[number];
 export const candidateConceptIdInputSchema = z.object({
   candidateId: z.string().uuid('候选概念 ID 无效'),
 });
@@ -147,6 +150,24 @@ export const createCandidateRelationshipInputSchema = z.object({
   targetCandidateId: candidateConceptIdInputSchema.shape.candidateId,
 }).refine((input) => input.sourceCandidateId !== input.targetCandidateId, {
   message: '先修概念和后续概念不能相同', path: ['targetCandidateId'],
+});
+export const saveAiSettingsInputSchema = z.object({
+  model: z.enum(DEEPSEEK_MODELS),
+  apiKey: z.string().trim().min(8, 'API Key 至少需要 8 个字符').max(512, 'API Key 过长').optional(),
+});
+export const previewAiCandidateGenerationInputSchema = z.object({
+  graphId: graphIdInputSchema.shape.graphId,
+  documentId: documentIdInputSchema.shape.documentId,
+  sectionPositions: z.array(z.number().int().min(0).max(4_999))
+    .min(1, '请至少选择一个章节')
+    .max(8, '一次最多选择 8 个章节'),
+}).superRefine((input, context) => {
+  if (new Set(input.sectionPositions).size !== input.sectionPositions.length) {
+    context.addIssue({ code: 'custom', message: '章节不能重复', path: ['sectionPositions'] });
+  }
+});
+export const aiGenerationTokenInputSchema = z.object({
+  previewToken: z.string().uuid('AI 生成预览已失效'),
 });
 export const startDiagnosticInputSchema = z.object({
   graphId: graphIdInputSchema.shape.graphId,
@@ -271,6 +292,8 @@ export type CreateCandidateConceptInput = z.infer<typeof createCandidateConceptI
 export type UpdateCandidateConceptInput = z.infer<typeof updateCandidateConceptInputSchema>;
 export type ReviewCandidateConceptInput = z.infer<typeof reviewCandidateConceptInputSchema>;
 export type CreateCandidateRelationshipInput = z.infer<typeof createCandidateRelationshipInputSchema>;
+export type SaveAiSettingsInput = z.infer<typeof saveAiSettingsInputSchema>;
+export type PreviewAiCandidateGenerationInput = z.infer<typeof previewAiCandidateGenerationInputSchema>;
 export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
@@ -564,6 +587,8 @@ export interface CandidateConceptView {
   sourceQuote: string;
   name: string;
   description: string;
+  origin: CandidateOrigin;
+  sourceModel: string | null;
   status: CandidateStatus;
   acceptedNodeId: string | null;
   duplicateNodeId: string | null;
@@ -592,6 +617,44 @@ export interface ApplyCandidateWorkspaceResult {
   graph: KnowledgeGraphDocument;
   acceptedConceptCount: number;
   acceptedRelationshipCount: number;
+}
+export interface AiSettingsView {
+  provider: 'DEEPSEEK';
+  baseUrl: 'https://api.deepseek.com';
+  model: DeepSeekModel;
+  configured: boolean;
+  secureStorageAvailable: boolean;
+}
+export interface AiConnectionTestResult {
+  ok: true;
+  model: DeepSeekModel;
+  latencyMs: number;
+}
+export interface AiGenerationSectionView {
+  position: number;
+  heading: string;
+  locator: string;
+  charCount: number;
+}
+export interface AiCandidateGenerationPreviewView {
+  previewToken: string;
+  documentId: string;
+  documentTitle: string;
+  documentSourceName: string;
+  model: DeepSeekModel;
+  sections: AiGenerationSectionView[];
+  totalCharCount: number;
+  excerpt: string;
+  expiresAt: string;
+}
+export interface AiCandidateGenerationResult {
+  workspace: CandidateWorkspaceView;
+  provider: 'DEEPSEEK';
+  model: DeepSeekModel;
+  conceptCount: number;
+  relationshipCount: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
 }
 export interface TutorDecisionView {
   id: string;
@@ -675,6 +738,15 @@ export interface OpenLearnGraphApi {
     deleteRelationship(relationshipId: string): Promise<CandidateWorkspaceView>;
     apply(graphId: string): Promise<ApplyCandidateWorkspaceResult>;
   };
+  ai: {
+    getSettings(): Promise<AiSettingsView>;
+    saveSettings(input: SaveAiSettingsInput): Promise<AiSettingsView>;
+    clearApiKey(): Promise<AiSettingsView>;
+    testConnection(): Promise<AiConnectionTestResult>;
+    previewCandidateGeneration(input: PreviewAiCandidateGenerationInput): Promise<AiCandidateGenerationPreviewView>;
+    generateCandidates(previewToken: string): Promise<AiCandidateGenerationResult>;
+    cancelCandidateGeneration(previewToken: string): Promise<void>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -706,5 +778,8 @@ export const IPC_CHANNELS = {
   candidateConceptUpdate: 'candidate:concept-update', candidateConceptReview: 'candidate:concept-review',
   candidateRelationshipCreate: 'candidate:relationship-create',
   candidateRelationshipDelete: 'candidate:relationship-delete', candidateWorkspaceApply: 'candidate:workspace-apply',
+  aiSettingsGet: 'ai:settings-get', aiSettingsSave: 'ai:settings-save', aiApiKeyClear: 'ai:api-key-clear',
+  aiConnectionTest: 'ai:connection-test', aiCandidatePreview: 'ai:candidate-preview',
+  aiCandidateGenerate: 'ai:candidate-generate', aiCandidateCancel: 'ai:candidate-cancel',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

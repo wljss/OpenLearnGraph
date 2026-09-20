@@ -211,7 +211,7 @@ async function main() {
       { name: 'paper.pdf', format: 'PDF', data: createTestPdf('Hello PDF extraction'), text: 'Hello PDF extraction' },
       { name: 'book.epub', format: 'EPUB', data: await createTestEpub(), text: '用 机器学习 解决问题' },
       { name: '课程.md', format: 'MARKDOWN', data: '# 课程导论\n\n先建立概念，再连接关系。', text: '先建立概念' },
-      { name: '笔记.txt', format: 'TEXT', data: '第一章 初识模型\n\n模型从数据中学习规律。', text: '模型从数据中学习规律' },
+      { name: '笔记.txt', format: 'TEXT', data: '第一章 初识模型\n\n模型从数据中学习规律，并通过损失函数评估预测误差。', text: '模型从数据中学习规律' },
     ];
     for (const sample of samples) {
       sample.path = join(root, sample.name);
@@ -287,6 +287,23 @@ async function main() {
     await waitForUi(app, "document.querySelector('.document-search-results')?.textContent?.includes('匹配章节') === true");
     await waitForUi(app, "document.querySelector('.document-reader mark')?.textContent === '模型'");
     console.log('通过：正式界面可打开正文并搜索定位');
+
+    const savedAiSettings = await apiCall(app, 'ai', `saveSettings(${JSON.stringify({
+      model: 'deepseek-flash', apiKey: 'sk-packaged-smoke-only',
+    })})`);
+    assert.equal(savedAiSettings.configured, true);
+    assert.equal(savedAiSettings.secureStorageAvailable, true);
+    await waitForUi(app, "document.querySelector('.ai-generate-section')?.disabled === false");
+    await app.renderer.evaluate("document.querySelector('.ai-generate-section').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.ai-generation-dialog') || document.querySelector('.document-reader-error'))");
+    const aiPreviewError = await app.renderer.evaluate("document.querySelector('.document-reader-error')?.textContent ?? ''");
+    assert(await app.renderer.evaluate("Boolean(document.querySelector('.ai-generation-dialog'))"), aiPreviewError);
+    assert(await app.renderer.evaluate("document.querySelector('.ai-generation-dialog')?.textContent?.includes('这一步会把上述正文发送给 DeepSeek') === true"));
+    assert(await app.renderer.evaluate("document.querySelector('.ai-generation-dialog .primary-button')?.disabled === true"));
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.ai-generation-dialog button')).find((button) => button.textContent === '暂不发送').click(); true");
+    await waitForUi(app, "!document.querySelector('.ai-generation-dialog')");
+    assert.equal((await apiCall(app, 'ai', 'clearApiKey()')).configured, false);
+    console.log('通过：正式 EXE 可安全保存密钥并在上传前展示确认范围');
 
     await app.renderer.evaluate(`(() => {
       const mark = document.querySelector('.document-reader mark');

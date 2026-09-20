@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AiCandidateGenerationPreviewView,
   CandidateConceptView,
   DocumentPreviewView,
   DocumentSearchView,
@@ -12,6 +13,8 @@ import type {
 } from '../../../shared/contracts';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { errorMessage } from '../../errorMessage';
+import { AiCandidateGenerationDialog } from './AiCandidateGenerationDialog';
+import { AiSettingsDialog } from './AiSettingsDialog';
 import { CandidateWorkspace } from './CandidateWorkspace';
 
 interface DocumentLibraryProps {
@@ -97,13 +100,14 @@ function SectionReader({ sections, totalSections }: {
 }
 
 function ImportedDocumentReader({
-  document, graph, structureDirty, initialTarget, onCandidateCreated, onMessage,
+  document, graph, structureDirty, initialTarget, onCandidateCreated, onRequestAiGeneration, onMessage,
 }: {
   document: ImportedDocumentView;
   graph: KnowledgeGraphDocument | null;
   structureDirty: boolean;
   initialTarget?: { position: number; offset: number; highlight?: string };
   onCandidateCreated: () => void;
+  onRequestAiGeneration: (sectionPosition: number) => Promise<void>;
   onMessage: DocumentLibraryProps['onMessage'];
 }): React.JSX.Element {
   const [sections, setSections] = useState<DocumentSectionSummaryView[]>([]);
@@ -121,6 +125,7 @@ function ImportedDocumentReader({
     startOffset: number; endOffset: number; text: string;
   } | null>(null);
   const [creatingCandidate, setCreatingCandidate] = useState(false);
+  const [preparingAi, setPreparingAi] = useState(false);
   const sectionRequest = useRef(0);
   const searchRequest = useRef(0);
   const markRef = useRef<HTMLElement | null>(null);
@@ -305,6 +310,21 @@ function ImportedDocumentReader({
     }
   };
 
+  const prepareAiGeneration = async (): Promise<void> => {
+    if (!selected || !graph || structureDirty) return;
+    setPreparingAi(true);
+    setReaderError(null);
+    try {
+      await onRequestAiGeneration(selected.position);
+    } catch (error) {
+      const message = `AI 生成预览失败：${errorMessage(error)}`;
+      setReaderError(message);
+      onMessage(message, 'error');
+    } finally {
+      setPreparingAi(false);
+    }
+  };
+
   return (
     <div className="document-reader document-full-reader">
       <aside aria-label="章节与搜索">
@@ -386,15 +406,24 @@ function ImportedDocumentReader({
           <header>
             <div><span>{document.sourceName} · {selected.locator} · 第 {selected.position + 1} / {document.sectionCount} 节</span>
               <strong>{selected.heading}</strong></div>
-            <button
-              className="candidate-from-selection"
-              type="button"
-              disabled={creatingCandidate || !sourceSelection || !graph || structureDirty || [...sourceSelection.text].length > 2_000}
-              title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : sourceSelection ? '保留原文出处并进入人工审核' : '请先在正文中选中文字'}
-              onClick={() => void createCandidate()}
-            >
-              {creatingCandidate ? '创建中…' : sourceSelection ? `创建候选概念（${[...sourceSelection.text].length} 字）` : '选中文字后创建候选'}
-            </button>
+            <div className="document-reader-ai-actions">
+              <button
+                className="candidate-from-selection"
+                type="button"
+                disabled={creatingCandidate || preparingAi || !sourceSelection || !graph || structureDirty || [...sourceSelection.text].length > 2_000}
+                title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : sourceSelection ? '保留原文出处并进入人工审核' : '请先在正文中选中文字'}
+                onClick={() => void createCandidate()}
+              >
+                {creatingCandidate ? '创建中…' : sourceSelection ? `创建候选概念（${[...sourceSelection.text].length} 字）` : '选中文字后创建候选'}
+              </button>
+              <button
+                className="ai-generate-section"
+                type="button"
+                disabled={preparingAi || creatingCandidate || !graph || structureDirty}
+                title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : '预览并确认后，将本节正文发送给 DeepSeek'}
+                onClick={() => void prepareAiGeneration()}
+              >{preparingAi ? '准备中…' : 'AI 提取本节'}</button>
+            </div>
           </header>
           {loadingSection && <p role="status">正在定位正文……</p>}
           <pre ref={textRef} onMouseUp={captureSelection} onKeyUp={captureSelection}>{highlightedContent()}</pre>
@@ -425,6 +454,8 @@ export function DocumentLibrary({
   const [discardConfirmation, setDiscardConfirmation] = useState<'close' | 'back' | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const [candidateWorkspaceOpen, setCandidateWorkspaceOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiGenerationPreview, setAiGenerationPreview] = useState<AiCandidateGenerationPreviewView | null>(null);
   const [readerTarget, setReaderTarget] = useState<{
     documentId: string; position: number; offset: number; highlight?: string;
   } | null>(null);
@@ -464,13 +495,14 @@ export function DocumentLibrary({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || busy || discardConfirmation || deleteConfirmation) return;
+      if (event.key !== 'Escape' || busy || discardConfirmation || deleteConfirmation
+        || candidateWorkspaceOpen || aiSettingsOpen || aiGenerationPreview) return;
       event.preventDefault();
       requestClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [busy, deleteConfirmation, discardConfirmation, requestClose]);
+  }, [aiGenerationPreview, aiSettingsOpen, busy, candidateWorkspaceOpen, deleteConfirmation, discardConfirmation, requestClose]);
 
   const chooseFile = async (): Promise<void> => {
     setBusy(true);
@@ -565,6 +597,20 @@ export function DocumentLibrary({
   };
 
   const current = preview ?? detail;
+  const prepareAiGeneration = async (sectionPosition: number): Promise<void> => {
+    if (!activeGraph || !detail) return;
+    const settings = await window.openLearnGraph.ai.getSettings();
+    if (!settings.configured) {
+      setAiSettingsOpen(true);
+      onMessage('请先配置 DeepSeek API Key。', 'info');
+      return;
+    }
+    setAiGenerationPreview(await window.openLearnGraph.ai.previewCandidateGeneration({
+      graphId: activeGraph.id,
+      documentId: detail.id,
+      sectionPositions: [sectionPosition],
+    }));
+  };
   const navigateToCandidateSource = (concept: CandidateConceptView): void => {
     if (!concept.documentId) {
       onMessage('原资料已删除；候选记录中仍保留原文快照和出处。', 'error');
@@ -589,11 +635,12 @@ export function DocumentLibrary({
         >
           <header className="assessment-modal-header document-library-header">
             <div>
-              <span className="modal-kicker">完全本地 · 不调用 AI API</span>
+              <span className="modal-kicker">本地资料库 · AI 仅在明确确认后调用</span>
               <h2 id="document-library-title">{current ? current.title : '本地资料库'}</h2>
               <p>{current ? current.sourceName : '先预览提取结果，确认后才保存正文。支持 PDF、EPUB、Markdown 和 TXT。'}</p>
             </div>
             <div className="document-header-actions">
+              <button type="button" disabled={busy} onClick={() => setAiSettingsOpen(true)}>AI 设置</button>
               {activeGraph && !preview && (
                 <button
                   type="button"
@@ -691,11 +738,12 @@ export function DocumentLibrary({
                   structureDirty={structureDirty}
                   initialTarget={readerTarget?.documentId === detail.id ? readerTarget : undefined}
                   onCandidateCreated={() => setCandidateWorkspaceOpen(true)}
+                  onRequestAiGeneration={prepareAiGeneration}
                   onMessage={onMessage}
                 />}
 
               <footer className="document-review-footer">
-                <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改或上传</span>
+                <span>SHA-256 {current.sha256.slice(0, 12)}… · 原文件不会被修改，AI 只发送你明确确认的正文</span>
                 <div>
                   {detail && <button className="text-danger-button" type="button" disabled={busy} onClick={() => setDeleteConfirmation(true)}>删除资料</button>}
                   {preview && (
@@ -744,6 +792,27 @@ export function DocumentLibrary({
           onClose={() => setCandidateWorkspaceOpen(false)}
           onNavigateSource={navigateToCandidateSource}
           onGraphUpdated={onGraphUpdated}
+          onMessage={onMessage}
+        />
+      )}
+      {aiSettingsOpen && (
+        <AiSettingsDialog
+          onClose={() => setAiSettingsOpen(false)}
+          onMessage={onMessage}
+        />
+      )}
+      {aiGenerationPreview && (
+        <AiCandidateGenerationDialog
+          preview={aiGenerationPreview}
+          onClose={() => setAiGenerationPreview(null)}
+          onOpenSettings={() => {
+            setAiGenerationPreview(null);
+            setAiSettingsOpen(true);
+          }}
+          onGenerated={() => {
+            setAiGenerationPreview(null);
+            setCandidateWorkspaceOpen(true);
+          }}
           onMessage={onMessage}
         />
       )}

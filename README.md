@@ -1,6 +1,6 @@
 # OpenLearnGraph
 
-OpenLearnGraph 是一个本地优先、以知识图谱为核心的 Windows 桌面学习应用。当前版本完成 M0–M7A：可构建学习路径，进行可恢复的概念学习、形成性练习和客观诊断，由可解释的本地决策引擎闭环安排下一步行动；还可在本机导入资料，并把有原文出处的候选概念和先修关系经人工审核后写入正式图谱。
+OpenLearnGraph 是一个本地优先、以知识图谱为核心的 Windows 桌面学习应用。当前版本完成 M0–M7B：可构建学习路径，进行可恢复的概念学习、形成性练习和客观诊断；还可在本机导入资料，手工或经明确授权后由 DeepSeek 提出有原文出处的候选概念与先修关系，再经人工审核写入正式图谱。
 
 ## 环境要求
 
@@ -47,7 +47,7 @@ npm.cmd run smoke:documents
 
 `package` 生成可直接运行的应用目录；`make` 在 `out/make/zip` 下生成 Windows ZIP 分发包。当前尚不承诺安装程序；带签名的 `OpenLearnGraph-Setup.exe` 属于 M10 发布工作。当前构建未代码签名，Windows SmartScreen 可能提示未知发布者。
 
-`smoke:documents` 需先运行 `package`，只在 Windows 上启动打包后的 EXE，用独立临时资料库验证四种格式的导入、异常反馈、重启读取、长资料定位，以及从原文选区到候选关系审核、事务写入和重启持久化的完整链路；测试结束会清理它创建的数据，不会使用平时的资料库。此测试用合成样本，不代替对真实中文 PDF/EPUB 排版的人工核对。
+`smoke:documents` 需先运行 `package`，只在 Windows 上启动打包后的 EXE，用独立临时资料库验证四种格式的导入、异常反馈、重启读取、长资料定位，从原文选区到候选关系审核、事务写入和重启持久化，以及 AI Key 安全保存和正文上传确认界面；测试不会发起真实 DeepSeek 请求。结束后会清理它创建的数据，不会使用平时的资料库。此测试用合成样本，不代替对真实中文 PDF/EPUB 排版的人工核对。
 
 ## 使用
 
@@ -78,10 +78,20 @@ npm.cmd run smoke:documents
 25. 在已导入正文中选中文字，点击“创建候选概念”。应用会保存资料名、页码/章节位置、精确字符区间和原文快照，并打开候选图谱工作台。
 26. 在工作台中修改概念名称和描述、忽略或恢复候选项，并连接“前者是后者先修”的候选关系。重名和循环关系会阻止写入；点击出处可返回原文并高亮定位。
 27. 只有点击“确认写入正式图谱”后，待审核概念和关系才会在单个 SQLite 事务中进入正式图谱；审核历史与来源快照继续保留。M7A 不调用 AI API，也不上传正文。
+28. 在资料库右上角打开“AI 设置”，选择 `deepseek-flash` 或 `deepseek-v4-pro`，填写 DeepSeek API Key 并测试连接。Key 由 Windows 安全存储加密，不会再显示给 renderer。
+29. 打开已导入资料的某一节，点击“AI 提取本节”。应用会先展示资料名、章节、字符数和摘要；只有勾选同意后才会把该节正文发送给 DeepSeek。
+30. DeepSeek 返回的概念、关系和引用会在本地再次校验；任何伪造引用、无效结构或循环都不会入库。成功结果仍然只是标有模型来源的候选项，必须由人工审核。
+
+授权的真实图书可放在被 Git 忽略的 `test-data/private/books/`。本机可用以下命令额外检查真实 PDF 提取：
+
+```powershell
+$env:RUN_LOCAL_BOOK_TESTS='1'
+npm.cmd test -- tests/localBooks.integration.test.ts
+```
 
 ## 数据位置与安全
 
-数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。导入资料、候选审核记录和原文快照同样只保存在该本地数据库中；原文件保留在用户选择的位置。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 明确暴露的窄接口可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
+数据库存放于 Electron 的 `userData` 目录（Windows 通常位于 `%APPDATA%/OpenLearnGraph/openlearngraph.sqlite3`），不写入源码目录。导入资料、候选审核记录和原文快照同样只保存在该本地数据库中；原文件保留在用户选择的位置。AI 设置保存于同一 `userData` 目录下的 `ai-settings.json`，API Key 只保存 Windows 安全存储生成的密文。渲染器启用上下文隔离、禁用 Node 集成并启用 sandbox；只有 preload 明确暴露的窄接口可以跨 IPC 调用，主进程使用 Zod 验证所有输入。
 
 学习状态不写入知识节点。原始证据保存在 `learning_evidence`，独立投影缓存在 `learner_node_states`；学习会话保存在 `learning_sessions`。练习和诊断分别保存不可变题目快照，因此之后编辑题库不会篡改既有历史。练习即时反馈只通过练习接口返回，未提交的诊断恢复接口不会泄露正确答案。学习建议保存在 `tutor_decisions`，记录规则版本、依据、用户响应与失效状态，不充当学习证据。
 

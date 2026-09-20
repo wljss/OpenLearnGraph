@@ -26,6 +26,8 @@ interface CandidateConceptRow {
   source_quote: string;
   name: string;
   description: string;
+  origin: 'MANUAL' | 'AI';
+  source_model: string | null;
   status: CandidateStatus;
   accepted_node_id: string | null;
   duplicate_node_id: string | null;
@@ -52,6 +54,20 @@ interface SourceRow {
   content: string;
 }
 
+export interface GeneratedCandidateBatchInput {
+  graphId: string;
+  documentId: string;
+  model: string;
+  concepts: Array<{
+    sectionPosition: number;
+    sourceStartOffset: number;
+    sourceEndOffset: number;
+    name: string;
+    description: string;
+  }>;
+  relationships: Array<{ sourceIndex: number; targetIndex: number }>;
+}
+
 function unicodeCodePoints(value: string): string[] {
   return Array.from(value);
 }
@@ -59,7 +75,7 @@ function unicodeCodePoints(value: string): string[] {
 const CONCEPT_COLUMNS = `c.id, c.graph_id, c.document_id, c.document_title,
   c.document_source_name, c.section_position, c.source_locator,
   c.source_start_offset, c.source_end_offset, c.source_quote, c.name,
-  c.description, c.status, c.accepted_node_id, c.created_at, c.updated_at,
+  c.description, c.origin, c.source_model, c.status, c.accepted_node_id, c.created_at, c.updated_at,
   (SELECT n.id FROM knowledge_nodes n
    WHERE n.graph_id = c.graph_id AND lower(trim(n.name)) = lower(trim(c.name))
      AND (c.accepted_node_id IS NULL OR n.id <> c.accepted_node_id)
@@ -83,6 +99,8 @@ function toConcept(row: CandidateConceptRow): CandidateConceptView {
     sourceQuote: row.source_quote,
     name: row.name,
     description: row.description,
+    origin: row.origin,
+    sourceModel: row.source_model,
     status: row.status,
     acceptedNodeId: row.accepted_node_id,
     duplicateNodeId: row.duplicate_node_id,
@@ -223,6 +241,79 @@ export class CandidateRepository {
       input.sectionPosition, source.locator, input.sourceStartOffset, input.sourceEndOffset,
       sourceQuote, input.name, input.description, now, now,
     );
+    return this.workspace(input.graphId);
+  }
+
+  createGeneratedBatch(input: GeneratedCandidateBatchInput): CandidateWorkspaceView {
+    if (!this.graphExists(input.graphId)) throw new Error('目标知识图谱不存在');
+    if (!input.concepts.length) throw new Error('AI 没有返回可用的候选概念');
+    if (hasDirectedCycle(input.relationships.map((relationship) => ({
+      sourceNodeId: String(relationship.sourceIndex),
+      targetNodeId: String(relationship.targetIndex),
+    })))) throw new Error('AI 返回的候选关系存在循环');
+
+    const sources = new Map<number, SourceRow>();
+    for (const concept of input.concepts) {
+      if (sources.has(concept.sectionPosition)) continue;
+      const source = this.database.prepare(
+        `SELECT d.title AS document_title, d.source_name, s.locator, s.content
+         FROM imported_documents d
+         JOIN imported_document_sections s ON s.document_id = d.id
+         WHERE d.id = ? AND s.position = ?`,
+      ).get(input.documentId, concept.sectionPosition) as SourceRow | undefined;
+      if (!source) throw new Error('AI 候选项引用的原文章节已失效');
+      sources.set(concept.sectionPosition, source);
+    }
+
+    const now = new Date().toISOString();
+    const candidateIds: string[] = [];
+    this.database.exec('BEGIN IMMEDIATE;');
+    try {
+      const insertConcept = this.database.prepare(
+        `INSERT INTO candidate_concepts
+         (id, graph_id, document_id, document_title, document_source_name,
+          section_position, source_locator, source_start_offset, source_end_offset,
+          source_quote, name, description, origin, source_model, status, accepted_node_id,
+          created_at, updated_at, reviewed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AI', ?, 'PENDING', NULL, ?, ?, NULL)`,
+      );
+      for (const concept of input.concepts) {
+        const source = sources.get(concept.sectionPosition) as SourceRow;
+        const characters = unicodeCodePoints(source.content);
+        if (concept.sourceEndOffset > characters.length) throw new Error('AI 候选项的原文位置已失效');
+        const sourceQuote = characters.slice(concept.sourceStartOffset, concept.sourceEndOffset).join('');
+        if (!sourceQuote.trim() || unicodeCodePoints(sourceQuote).length > 2_000) {
+          throw new Error('AI 候选项的原文依据无效');
+        }
+        const id = randomUUID();
+        candidateIds.push(id);
+        insertConcept.run(
+          id, input.graphId, input.documentId, source.document_title, source.source_name,
+          concept.sectionPosition, source.locator, concept.sourceStartOffset, concept.sourceEndOffset,
+          sourceQuote, concept.name, concept.description, input.model, now, now,
+        );
+      }
+      const seenRelationships = new Set<string>();
+      const insertRelationship = this.database.prepare(
+        `INSERT INTO candidate_relationships
+         (id, graph_id, source_candidate_id, target_candidate_id, relationship,
+          status, accepted_edge_id, created_at, updated_at, reviewed_at)
+         VALUES (?, ?, ?, ?, 'PREREQUISITE', 'PENDING', NULL, ?, ?, NULL)`,
+      );
+      for (const relationship of input.relationships) {
+        const sourceId = candidateIds[relationship.sourceIndex];
+        const targetId = candidateIds[relationship.targetIndex];
+        if (!sourceId || !targetId || sourceId === targetId) throw new Error('AI 候选关系引用了无效概念');
+        const pair = `${sourceId}:${targetId}`;
+        if (seenRelationships.has(pair)) throw new Error('AI 返回了重复的候选关系');
+        seenRelationships.add(pair);
+        insertRelationship.run(randomUUID(), input.graphId, sourceId, targetId, now, now);
+      }
+      this.database.exec('COMMIT;');
+    } catch (error) {
+      this.database.exec('ROLLBACK;');
+      throw error;
+    }
     return this.workspace(input.graphId);
   }
 

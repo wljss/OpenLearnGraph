@@ -6,7 +6,7 @@ OpenLearnGraph 将任何学习目标转化为持续演化的知识地图，由�
 
 核心循环：学习目标 → 知识图谱 → 学习者状态 → TutorDecision → 教学/评估/练习/复习 → Evidence → 状态更新 → 重规划。
 
-## 当前范围：M0–M7A
+## 当前范围：M0–M7B
 
 - Windows 本地 Electron 应用；React Flow 是主工作区。
 - 创建、命名和加载多个知识图谱。
@@ -50,11 +50,16 @@ OpenLearnGraph 将任何学习目标转化为持续演化的知识地图，由�
 - 候选工作台允许修改名称与描述、忽略和恢复候选概念，并审核候选先修关系；可从候选项返回原文章节定位。
 - 与正式图谱或候选集重名、引用非待审核候选、形成循环或超过规模限制时拒绝写入。
 - 用户最终确认后，待审核概念与关系才会在单个事务中写入正式图谱；接受、忽略和来源快照作为审核历史保留。
+- 配置 DeepSeek `deepseek-flash / deepseek-v4-pro`；API Key 只经密码输入控件和窄 IPC 交给 main，以 Electron `safeStorage` 调用 Windows 安全存储加密，不从 main 返回。
+- 生成前展示资料、章节、字符数和摘要；未勾选明确同意时不发送任何正文。
+- 仅向 DeepSeek 发送用户确认的正文，不发送原始文件、本地路径、其他章节或学习状态；请求可取消、超时和服务错误均有明确反馈。
+- DeepSeek JSON 经运行时 schema、唯一性、先修循环和逐字原文引用校验；任一项失败时整批不入库。
+- 通过校验的 AI 输出只以 `PENDING` 候选保存，标记模型来源；生成状态、发送范围、token 数和结果数量可审计，不记录密钥。
 
 ## 明确不在当前范围
 
-自动出题、开放题评分、基于难度或能力参数的自适应选题、生成式教学内容、间隔复习调度、LLM/AI provider、AI 自动提出候选、DOCX 提取、本地 OCR、RAG、账号、云同步、遥测和自动更新均不在当前范围。资料导入和候选创建都不会自动修改正式图谱。题库由用户手工维护，客观结论只来自本地单选诊断；没有诊断结果时，4–5 分自评仍可形成主观的 `MASTERED` 状态。本地建议不伪装成 AI 推理，教学会话也不生成或补写事实。
+自动出题、开放题评分、基于难度或能力参数的自适应选题、生成式教学内容、间隔复习调度、除 DeepSeek 外的 provider、DOCX 提取、本地 OCR、RAG、账号、云同步、遥测和自动更新均不在当前范围。AI 只能提出候选，不会自动修改正式图谱。题库由用户手工维护，客观结论只来自本地单选诊断；没有诊断结果时，4–5 分自评仍可形成主观的 `MASTERED` 状态。AI 候选不产生 Evidence，不改变 learner state。
 
 ## Tutor 决策约束
 
-动作空间固定为 `TEACH | ASSESS | PRACTICE | REVIEW | REMEDIATE | ADVANCE`。策略/LLM 只产出 `TutorDecision`；经运行时验证后，由应用服务执行用户确认的导航或会话。只有真实学习/作答行为可以产生 Evidence，再由 learner model 更新状态。
+动作空间固定为 `TEACH | ASSESS | PRACTICE | REVIEW | REMEDIATE | ADVANCE`。当前 Tutor 是完全本地、确定性的规则决策，与 M7B 的 DeepSeek 候选生成相互独立。未来即使为 Tutor 接入 LLM，也只能产出经运行时验证的 `TutorDecision`，再由应用服务执行用户确认的导航或会话；LLM 不得直接修改数据库。只有真实学习/作答行为可以产生 Evidence，再由 learner model 更新状态。

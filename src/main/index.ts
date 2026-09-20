@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
 import { registerAssessmentIpc } from './ipc/registerAssessmentIpc';
+import { registerAiIpc } from './ipc/registerAiIpc';
 import { registerCandidateIpc } from './ipc/registerCandidateIpc';
 import { registerDocumentIpc } from './ipc/registerDocumentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
@@ -12,6 +13,7 @@ import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
 import { registerTutorIpc } from './ipc/registerTutorIpc';
 import { AssessmentRepository } from './repositories/assessmentRepository';
+import { AiGenerationRepository } from './repositories/aiGenerationRepository';
 import { CandidateRepository } from './repositories/candidateRepository';
 import { DocumentRepository } from './repositories/documentRepository';
 import { GraphRepository } from './repositories/graphRepository';
@@ -20,6 +22,7 @@ import { PracticeRepository } from './repositories/practiceRepository';
 import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
 import { AssessmentService } from './services/assessmentService';
+import { AiService } from './services/aiService';
 import { CandidateService } from './services/candidateService';
 import { DocumentService } from './services/documentService';
 import { GraphService } from './services/graphService';
@@ -84,6 +87,11 @@ void app.whenReady().then(() => {
   const practiceRepository = new PracticeRepository(database);
   const documentRepository = new DocumentRepository(database);
   const candidateRepository = new CandidateRepository(database, graphRepository);
+  const aiGenerationRepository = new AiGenerationRepository(database);
+  const aiService = new AiService(documentRepository, candidateRepository, aiGenerationRepository, {
+    settingsPath: path.join(app.getPath('userData'), 'ai-settings.json'),
+    secureStorage: safeStorage,
+  });
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
   registerAssessmentIpc(new AssessmentService(
@@ -114,6 +122,7 @@ void app.whenReady().then(() => {
   ));
   registerDocumentIpc(new DocumentService(documentRepository));
   registerCandidateIpc(new CandidateService(candidateRepository));
+  registerAiIpc(aiService);
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {

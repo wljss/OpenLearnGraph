@@ -44,6 +44,14 @@ interface SectionContentRow extends SectionRow {
   total_length: number;
 }
 
+export interface StoredDocumentSection {
+  position: number;
+  heading: string;
+  locator: string;
+  content: string;
+  charCount: number;
+}
+
 interface SearchRow extends SectionRow {
   excerpt: string;
   match_at: number;
@@ -171,6 +179,21 @@ export class DocumentRepository {
       previousOffset: offset > 0 ? Math.max(0, offset - SECTION_CHUNK_SIZE) : null,
       nextOffset: endOffset < totalLength ? endOffset : null,
     };
+  }
+
+  readSections(documentId: string, positions: number[]): StoredDocumentSection[] {
+    if (!positions.length) return [];
+    const placeholders = positions.map(() => '?').join(', ');
+    const rows = this.database.prepare(
+      `SELECT position, heading, locator, content, length(content) AS char_count
+       FROM imported_document_sections
+       WHERE document_id = ? AND position IN (${placeholders})
+       ORDER BY position`,
+    ).all(documentId, ...positions) as unknown as Array<SectionRow & { content: string }>;
+    return rows.map((row) => ({
+      ...sectionSummary(row),
+      content: row.content,
+    }));
   }
 
   search(documentId: string, query: string): DocumentSearchView {

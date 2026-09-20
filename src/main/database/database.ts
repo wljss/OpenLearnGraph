@@ -428,6 +428,35 @@ const MIGRATION_8 = `
     ON candidate_relationships(graph_id, status, created_at);
 `;
 
+const MIGRATION_9 = `
+  CREATE TABLE ai_generation_runs (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES knowledge_graphs(id) ON DELETE CASCADE,
+    document_id TEXT REFERENCES imported_documents(id) ON DELETE SET NULL,
+    document_title TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK (provider = 'DEEPSEEK'),
+    model TEXT NOT NULL,
+    section_positions_json TEXT NOT NULL CHECK (json_valid(section_positions_json)),
+    source_char_count INTEGER NOT NULL CHECK (source_char_count > 0),
+    status TEXT NOT NULL CHECK (status IN ('IN_PROGRESS', 'SUCCEEDED', 'FAILED', 'CANCELLED')),
+    prompt_tokens INTEGER CHECK (prompt_tokens IS NULL OR prompt_tokens >= 0),
+    completion_tokens INTEGER CHECK (completion_tokens IS NULL OR completion_tokens >= 0),
+    concept_count INTEGER CHECK (concept_count IS NULL OR concept_count >= 0),
+    relationship_count INTEGER CHECK (relationship_count IS NULL OR relationship_count >= 0),
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+  ) STRICT;
+  CREATE INDEX idx_ai_generation_runs_graph_time
+    ON ai_generation_runs(graph_id, created_at DESC);
+
+  ALTER TABLE candidate_concepts
+    ADD COLUMN origin TEXT NOT NULL DEFAULT 'MANUAL'
+    CHECK (origin IN ('MANUAL', 'AI'));
+  ALTER TABLE candidate_concepts
+    ADD COLUMN source_model TEXT;
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -514,6 +543,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_8);
       database.exec('PRAGMA user_version = 8;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 9) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_9);
+      database.exec('PRAGMA user_version = 9;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');
