@@ -160,10 +160,13 @@ export const previewAiCandidateGenerationInputSchema = z.object({
   documentId: documentIdInputSchema.shape.documentId,
   sectionPositions: z.array(z.number().int().min(0).max(4_999))
     .min(1, '请至少选择一个章节')
-    .max(8, '一次最多选择 8 个章节'),
+    .max(80, '一次最多选择 80 个连续章节'),
 }).superRefine((input, context) => {
   if (new Set(input.sectionPositions).size !== input.sectionPositions.length) {
     context.addIssue({ code: 'custom', message: '章节不能重复', path: ['sectionPositions'] });
+  }
+  if (input.sectionPositions.some((position, index) => index > 0 && position !== input.sectionPositions[index - 1] + 1)) {
+    context.addIssue({ code: 'custom', message: '请选择连续的章节范围', path: ['sectionPositions'] });
   }
 });
 export const aiGenerationTokenInputSchema = z.object({
@@ -646,12 +649,14 @@ export interface AiGenerationSectionView {
 }
 export interface AiCandidateGenerationPreviewView {
   previewToken: string;
+  graphId: string;
   documentId: string;
   documentTitle: string;
   documentSourceName: string;
   model: DeepSeekModel;
   sections: AiGenerationSectionView[];
   totalCharCount: number;
+  batchCount: number;
   excerpt: string;
   expiresAt: string;
 }
@@ -661,6 +666,8 @@ export interface AiCandidateGenerationResult {
   model: DeepSeekModel;
   conceptCount: number;
   relationshipCount: number;
+  batchCount: number;
+  mergeWarnings: string[];
   promptTokens: number | null;
   completionTokens: number | null;
 }

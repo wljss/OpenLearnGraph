@@ -206,7 +206,7 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 ### ai_generation_runs
 
-每次用户确认后的云端生成均先创建审计记录。记录包含图谱、资料、provider、模型、用户确认的章节 ID、发送字符数、状态、token 用量、候选概念/关系数量、可读错误以及开始/结束时间；不保存 API Key、提示词、正文或模型原始响应。状态为 `IN_PROGRESS / SUCCEEDED / FAILED / CANCELLED`。
+每次用户确认后的云端生成均先创建一条审计记录。记录包含用户明确选择的目标图谱、资料、provider、模型、完整连续章节范围、总发送字符数、状态、所有批次汇总 token 用量、最终候选概念/关系数量、可读错误以及开始/结束时间；不保存 API Key、提示词、正文或模型原始响应。状态为 `IN_PROGRESS / SUCCEEDED / FAILED / CANCELLED`，任一批失败时本次运行整体失败且候选区不留下部分结果。
 
 DeepSeek 设置不进入 SQLite。模型选择与 Windows `safeStorage` 生成的 API Key 密文保存在 Electron `userData` 下的 `ai-settings.json`；main 只向 renderer 返回“是否已配置”和模型，不返回密钥或密文。
 

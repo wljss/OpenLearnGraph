@@ -332,6 +332,12 @@ async function main() {
     assert.equal(savedAiSettings.secureStorageAvailable, true);
     await waitForUi(app, "document.querySelector('.ai-generate-section')?.disabled === false");
     await app.renderer.evaluate("document.querySelector('.ai-generate-section').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.ai-scope-dialog') || document.querySelector('.document-reader-error'))");
+    const aiScopeError = await app.renderer.evaluate("document.querySelector('.document-reader-error')?.textContent ?? ''");
+    assert(await app.renderer.evaluate("Boolean(document.querySelector('.ai-scope-dialog'))"), aiScopeError);
+    assert(await app.renderer.evaluate("document.querySelector('.ai-scope-dialog')?.textContent?.includes('现在还不会发送任何正文') === true"));
+    assert(await app.renderer.evaluate("Boolean(document.querySelector('#ai-target-graph')?.value)"));
+    await app.renderer.evaluate("document.querySelector('.ai-scope-dialog > footer .primary-button').click(); true");
     await waitForUi(app, "Boolean(document.querySelector('.ai-generation-dialog') || document.querySelector('.document-reader-error'))");
     const aiPreviewError = await app.renderer.evaluate("document.querySelector('.document-reader-error')?.textContent ?? ''");
     assert(await app.renderer.evaluate("Boolean(document.querySelector('.ai-generation-dialog'))"), aiPreviewError);

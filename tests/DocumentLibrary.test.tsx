@@ -67,6 +67,12 @@ const graph: KnowledgeGraphDocument = {
   edges: [],
 };
 
+const secondGraph: KnowledgeGraphDocument = {
+  ...graph,
+  id: '44444444-4444-4444-8444-444444444444',
+  name: '第二个图谱',
+};
+
 function libraryProps(overrides: Partial<ComponentProps<typeof DocumentLibrary>> = {}): ComponentProps<typeof DocumentLibrary> {
   return {
     activeGraph: graph,
@@ -114,6 +120,12 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
     pendingRelationshipCount: 0, blockingIssues: [],
   };
   window.openLearnGraph = {
+    graphs: {
+      list: vi.fn().mockResolvedValue([graph, secondGraph]),
+      create: vi.fn().mockResolvedValue(graph),
+      load: vi.fn().mockImplementation(async (graphId: string) => (graphId === secondGraph.id ? secondGraph : graph)),
+      save: vi.fn(),
+    },
     documents,
     candidates: {
       getWorkspace: vi.fn().mockResolvedValue(emptyWorkspace),
@@ -132,18 +144,24 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
       saveSettings: vi.fn(), clearApiKey: vi.fn(), testConnection: vi.fn(),
       previewCandidateGeneration: vi.fn().mockResolvedValue({
         previewToken: '77777777-7777-4777-8777-777777777777',
+        graphId: secondGraph.id,
         documentId: imported.id,
         documentTitle: imported.title,
         documentSourceName: imported.sourceName,
         model: 'deepseek-flash',
-        sections: [{ position: 0, heading: '第一章', locator: '第 1–5 行', charCount: 8 }],
-        totalCharCount: 8,
+        sections: [
+          { position: 0, heading: '第一章', locator: '第 1–5 行', charCount: 8 },
+          { position: 1, heading: '第二章', locator: '第 6–10 行', charCount: 8 },
+        ],
+        totalCharCount: 16,
+        batchCount: 1,
         excerpt: '第一章的正文。',
         expiresAt: '2026-01-02T00:10:00.000Z',
       }),
       generateCandidates: vi.fn().mockResolvedValue({
         workspace: emptyWorkspace, provider: 'DEEPSEEK', model: 'deepseek-flash',
-        conceptCount: 2, relationshipCount: 1, promptTokens: 100, completionTokens: 30,
+        conceptCount: 2, relationshipCount: 1, batchCount: 1, mergeWarnings: [],
+        promptTokens: 100, completionTokens: 30,
       }),
       cancelCandidateGeneration: vi.fn().mockResolvedValue(undefined),
     },
@@ -383,13 +401,21 @@ describe('DocumentLibrary', () => {
     const ai = window.openLearnGraph.ai;
     render(<DocumentLibrary {...libraryProps()} />);
     fireEvent.click(await screen.findByRole('button', { name: /学习指南（校对版）/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'AI 提取本节' }));
-    expect(await screen.findByRole('dialog', { name: 'AI 生成候选概念' })).toBeVisible();
-    expect(screen.getAllByText('第 1–5 行 · 8 字符')).toHaveLength(2);
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 生成学习路线' }));
+    expect(await screen.findByRole('dialog', { name: '生成学习路线候选' })).toBeVisible();
+    const graphSelector = await screen.findByLabelText('目标图谱');
+    expect(graphSelector).toHaveValue(graph.id);
+    fireEvent.change(graphSelector, { target: { value: secondGraph.id } });
+    fireEvent.change(screen.getByLabelText('结束章节'), { target: { value: '1' } });
+    expect(screen.getByText('2 节')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '下一步：核对发送范围' }));
+    expect(await screen.findByRole('dialog', { name: '核对 DeepSeek 发送范围' })).toBeVisible();
+    expect(screen.getByText(secondGraph.name)).toBeVisible();
+    expect(screen.getByText('2 节 · 16 字符 · 1 批')).toBeVisible();
     expect(ai.previewCandidateGeneration).toHaveBeenCalledWith({
-      graphId: graph.id,
+      graphId: secondGraph.id,
       documentId: imported.id,
-      sectionPositions: [0],
+      sectionPositions: [0, 1],
     });
     expect(ai.generateCandidates).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('checkbox'));

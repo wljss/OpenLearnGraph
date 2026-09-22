@@ -12,7 +12,7 @@
 - **M6A — Reliable local document import（完成）**：PDF/EPUB/Markdown/TXT 的本地确定性提取、元数据与章节/页码保留、导入前预览、编码识别、重复检测及扫描 PDF 提示；已导入正文可按需完整阅读、搜索与定位。
 - **M6B — Extended document extraction**：DOCX、本地 OCR，以及更完整的表格与复杂版面保留。
 - **M7A — Source-grounded candidate graph review（完成）**：从本地资料原文创建候选概念，保留可导航出处，编辑/忽略/恢复候选项，审核先修关系，并在重名和循环检查后原子写入正式图谱；不调用 AI。
-- **M7B — AI-assisted candidate generation（完成）**：DeepSeek 密钥由 Windows 安全存储加密；用户在发送前核对资料、章节和字符数；云端输出经 schema、循环和逐字原文引用验证后只进入候选工作台；请求可取消、失败可重试并保留不含密钥的审计记录。
+- **M7B — AI-assisted candidate generation（完成）**：DeepSeek 密钥由 Windows 安全存储加密；用户先明确目标图谱和连续章节范围，再在发送前核对资料、字符数和批次数；长范围按 32,000 字符自动拆分，所有批次经 schema、循环和逐字原文引用验证后原子进入候选工作台；请求可取消、失败不留部分结果并保留不含密钥的审计记录。
 - **M8 — Source-grounded learning / RAG**：来源支撑的检索与教学。
 - **M9 — Review scheduling**：复习调度与遗忘模型。
 - **M10 — Windows release**：安装体验、签名、无障碍、性能、发布流程与开源完善。

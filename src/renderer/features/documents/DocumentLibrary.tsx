@@ -15,6 +15,7 @@ import type {
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { errorMessage } from '../../errorMessage';
 import { AiCandidateGenerationDialog } from './AiCandidateGenerationDialog';
+import { AiCandidateScopeDialog } from './AiCandidateScopeDialog';
 import { AiSettingsDialog } from './AiSettingsDialog';
 import { CandidateWorkspace } from './CandidateWorkspace';
 
@@ -312,7 +313,7 @@ function ImportedDocumentReader({
   };
 
   const prepareAiGeneration = async (): Promise<void> => {
-    if (!selected || !graph || structureDirty) return;
+    if (!selected || structureDirty) return;
     setPreparingAi(true);
     setReaderError(null);
     try {
@@ -420,10 +421,10 @@ function ImportedDocumentReader({
               <button
                 className="ai-generate-section"
                 type="button"
-                disabled={preparingAi || creatingCandidate || !graph || structureDirty}
-                title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : '预览并确认后，将本节正文发送给 DeepSeek'}
+                disabled={preparingAi || creatingCandidate || structureDirty}
+                title={structureDirty ? '请先保存图谱结构' : '选择目标图谱和连续章节范围；核对并确认后才会发送给 DeepSeek'}
                 onClick={() => void prepareAiGeneration()}
-              >{preparingAi ? '准备中…' : 'AI 提取本节'}</button>
+              >{preparingAi ? '准备中…' : 'AI 生成学习路线'}</button>
             </div>
           </header>
           {loadingSection && <p role="status">正在定位正文……</p>}
@@ -457,9 +458,11 @@ export function DocumentLibrary({
   const [busy, setBusy] = useState(false);
   const [discardConfirmation, setDiscardConfirmation] = useState<'close' | 'back' | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState(false);
-  const [candidateWorkspaceOpen, setCandidateWorkspaceOpen] = useState(false);
+  const [candidateWorkspaceGraph, setCandidateWorkspaceGraph] = useState<KnowledgeGraphDocument | null>(null);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiScopeInitialPosition, setAiScopeInitialPosition] = useState<number | null>(null);
   const [aiGenerationPreview, setAiGenerationPreview] = useState<AiCandidateGenerationPreviewView | null>(null);
+  const [aiGenerationTargetGraph, setAiGenerationTargetGraph] = useState<KnowledgeGraphDocument | null>(null);
   const [readerTarget, setReaderTarget] = useState<{
     documentId: string; position: number; offset: number; highlight?: string;
   } | null>(null);
@@ -508,13 +511,13 @@ export function DocumentLibrary({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || busy || discardConfirmation || deleteConfirmation
-        || candidateWorkspaceOpen || aiSettingsOpen || aiGenerationPreview) return;
+        || candidateWorkspaceGraph || aiSettingsOpen || aiScopeInitialPosition !== null || aiGenerationPreview) return;
       event.preventDefault();
       requestClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [aiGenerationPreview, aiSettingsOpen, busy, candidateWorkspaceOpen, deleteConfirmation, discardConfirmation, requestClose]);
+  }, [aiGenerationPreview, aiScopeInitialPosition, aiSettingsOpen, busy, candidateWorkspaceGraph, deleteConfirmation, discardConfirmation, requestClose]);
 
   const chooseFiles = async (): Promise<void> => {
     setBusy(true);
@@ -661,25 +664,21 @@ export function DocumentLibrary({
     </section>
   ) : null;
   const prepareAiGeneration = async (sectionPosition: number): Promise<void> => {
-    if (!activeGraph || !detail) return;
+    if (!detail) return;
     const settings = await window.openLearnGraph.ai.getSettings();
     if (!settings.configured) {
       setAiSettingsOpen(true);
       onMessage('请先配置 DeepSeek API Key。', 'info');
       return;
     }
-    setAiGenerationPreview(await window.openLearnGraph.ai.previewCandidateGeneration({
-      graphId: activeGraph.id,
-      documentId: detail.id,
-      sectionPositions: [sectionPosition],
-    }));
+    setAiScopeInitialPosition(sectionPosition);
   };
   const navigateToCandidateSource = (concept: CandidateConceptView): void => {
     if (!concept.documentId) {
       onMessage('原资料已删除；候选记录中仍保留原文快照和出处。', 'error');
       return;
     }
-    setCandidateWorkspaceOpen(false);
+    setCandidateWorkspaceGraph(null);
     void openDocument(concept.documentId, {
       position: concept.sectionPosition,
       offset: Math.max(0, concept.sourceStartOffset - 80),
@@ -711,7 +710,7 @@ export function DocumentLibrary({
                   type="button"
                   disabled={busy || structureDirty}
                   title={structureDirty ? '请先保存图谱结构' : '审核资料产生的候选概念和关系'}
-                  onClick={() => setCandidateWorkspaceOpen(true)}
+                  onClick={() => setCandidateWorkspaceGraph(activeGraph)}
                 >候选图谱</button>
               )}
               {current && <button type="button" disabled={busy} onClick={returnToLibrary}>返回资料库</button>}
@@ -812,7 +811,7 @@ export function DocumentLibrary({
                   graph={activeGraph}
                   structureDirty={structureDirty}
                   initialTarget={readerTarget?.documentId === detail.id ? readerTarget : undefined}
-                  onCandidateCreated={() => setCandidateWorkspaceOpen(true)}
+                  onCandidateCreated={() => setCandidateWorkspaceGraph(activeGraph)}
                   onRequestAiGeneration={prepareAiGeneration}
                   onMessage={onMessage}
                 />}
@@ -865,10 +864,10 @@ export function DocumentLibrary({
           onConfirm={() => void deleteDocument()}
         />
       )}
-      {candidateWorkspaceOpen && activeGraph && (
+      {candidateWorkspaceGraph && (
         <CandidateWorkspace
-          graph={activeGraph}
-          onClose={() => setCandidateWorkspaceOpen(false)}
+          graph={candidateWorkspaceGraph}
+          onClose={() => setCandidateWorkspaceGraph(null)}
           onNavigateSource={navigateToCandidateSource}
           onGraphUpdated={onGraphUpdated}
           onMessage={onMessage}
@@ -880,17 +879,38 @@ export function DocumentLibrary({
           onMessage={onMessage}
         />
       )}
-      {aiGenerationPreview && (
+      {aiScopeInitialPosition !== null && detail && (
+        <AiCandidateScopeDialog
+          document={detail}
+          initialSectionPosition={aiScopeInitialPosition}
+          activeGraph={activeGraph}
+          onClose={() => setAiScopeInitialPosition(null)}
+          onPrepared={(generationPreview, targetGraph) => {
+            setAiScopeInitialPosition(null);
+            setAiGenerationPreview(generationPreview);
+            setAiGenerationTargetGraph(targetGraph);
+          }}
+          onGraphCreated={onGraphUpdated}
+          onMessage={onMessage}
+        />
+      )}
+      {aiGenerationPreview && aiGenerationTargetGraph && (
         <AiCandidateGenerationDialog
           preview={aiGenerationPreview}
-          onClose={() => setAiGenerationPreview(null)}
+          targetGraph={aiGenerationTargetGraph}
+          onClose={() => {
+            setAiGenerationPreview(null);
+            setAiGenerationTargetGraph(null);
+          }}
           onOpenSettings={() => {
             setAiGenerationPreview(null);
+            setAiGenerationTargetGraph(null);
             setAiSettingsOpen(true);
           }}
           onGenerated={() => {
             setAiGenerationPreview(null);
-            setCandidateWorkspaceOpen(true);
+            setAiGenerationTargetGraph(null);
+            setCandidateWorkspaceGraph(aiGenerationTargetGraph);
           }}
           onMessage={onMessage}
         />
