@@ -358,13 +358,13 @@ async function main() {
       mark.closest('pre').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       return true;
     })()`);
-    await waitForUi(app, "document.querySelector('.candidate-from-selection')?.textContent?.includes('创建候选概念') === true");
+    await waitForUi(app, "document.querySelector('.candidate-from-selection')?.textContent?.includes('加入路线预览') === true");
     await app.renderer.evaluate("document.querySelector('.candidate-from-selection').click(); true");
     await waitForUi(app, "Boolean(document.querySelector('.candidate-workspace'))");
     const firstWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
     assert.equal(firstWorkspace.pendingConceptCount, 1);
     assert.equal(firstWorkspace.concepts[0].sourceQuote, '模型');
-    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭候选图谱\"]').click(); true");
+    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭学习路线预览\"]').click(); true");
     await waitForUi(app, "!document.querySelector('.candidate-workspace')");
 
     const textSection = await call(app, `getSection(${JSON.stringify(ids[3])}, 0, 0)`);
@@ -391,12 +391,12 @@ async function main() {
       targetCandidateId: patternCandidate.id,
     })})`);
 
-    await app.renderer.evaluate("Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '候选图谱').click(); true");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('button')).find((button) => button.textContent === '学习路线预览').click(); true");
     await waitForUi(app, "document.querySelectorAll('.candidate-card').length === 2 && document.querySelectorAll('.candidate-relation-list li').length === 1");
-    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('确认写入')).click(); true");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('加入')).click(); true");
     await waitForUi(app, "Boolean(document.querySelector('[role=alertdialog]'))");
-    await app.renderer.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).find((button) => button.textContent.includes('确认写入图谱')).click(); true");
-    await waitForUi(app, "document.querySelector('.candidate-workspace > footer')?.textContent?.includes('0 个概念') === true");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).find((button) => button.textContent.includes('加入学习路线')).click(); true");
+    await waitForUi(app, "document.querySelector('.candidate-workspace > footer')?.textContent?.includes('没有待加入内容') === true");
     const acceptedGraph = await apiCall(app, 'graphs', `load(${JSON.stringify(candidateGraph.id)})`);
     assert.equal(acceptedGraph.nodes.length, 2);
     assert.equal(acceptedGraph.edges.length, 1);

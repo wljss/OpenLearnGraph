@@ -383,7 +383,7 @@ describe('DocumentLibrary', () => {
     selection.removeAllRanges();
     selection.addRange(range);
     fireEvent.mouseUp(pre);
-    fireEvent.click(screen.getByRole('button', { name: '创建候选概念（3 字）' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入路线预览（3 字）' }));
     await waitFor(() => expect(candidates.createConcept).toHaveBeenCalledWith({
       graphId: graph.id,
       documentId: imported.id,
@@ -393,7 +393,7 @@ describe('DocumentLibrary', () => {
       name: '第一章',
       description: '',
     }));
-    expect(await screen.findByRole('dialog', { name: /候选概念/ })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: '学习路线预览' })).toBeVisible();
   });
 
   it('shows the exact cloud upload scope before asking DeepSeek to generate candidates', async () => {
@@ -421,6 +421,6 @@ describe('DocumentLibrary', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: '确认发送并生成' }));
     await waitFor(() => expect(ai.generateCandidates).toHaveBeenCalledWith('77777777-7777-4777-8777-777777777777'));
-    expect(await screen.findByRole('dialog', { name: /候选概念/ })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: '学习路线预览' })).toBeVisible();
   });
 });

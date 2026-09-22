@@ -194,7 +194,7 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 | origin / source_model | TEXT / TEXT / NULL | `MANUAL / AI` 来源；AI 候选记录实际使用的模型 |
 | status | TEXT | `PENDING / ACCEPTED / IGNORED` |
 | accepted_node_id | TEXT / NULL | 确认写入后关联的正式概念；正式概念删除后置空 |
-| created_at / updated_at / reviewed_at | TEXT / NULL | 候选与审核时间线 |
+| created_at / updated_at / reviewed_at | TEXT / NULL | 候选与审核时间线；用户点击保留、修改、排除或最终写入时记录审核时间 |
 
 ### candidate_relationships
 

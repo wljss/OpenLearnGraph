@@ -40,7 +40,7 @@ export function AiCandidateGenerationDialog({ preview, targetGraph, onClose, onG
     try {
       const result = await window.openLearnGraph.ai.generateCandidates(preview.previewToken);
       const mergeNote = result.mergeWarnings.length ? `；${result.mergeWarnings.join('；')}` : '';
-      onMessage(`DeepSeek 通过 ${result.batchCount} 批生成了 ${result.conceptCount} 个候选概念和 ${result.relationshipCount} 条关系${mergeNote}，请逐项审核。`, 'success');
+      onMessage(`DeepSeek 通过 ${result.batchCount} 批提出了 ${result.conceptCount} 项学习内容和 ${result.relationshipCount} 条学习顺序${mergeNote}，请在路线预览中确认。`, 'success');
       onGenerated(result);
     } catch (reason) {
       setError(errorMessage(reason));

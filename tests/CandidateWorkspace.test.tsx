@@ -25,7 +25,7 @@ const workspace: CandidateWorkspaceView = {
       sourceLocator: '第 1–4 行', sourceStartOffset: 0, sourceEndOffset: 4,
       sourceQuote: '线性回归', name: '线性回归', description: '', origin: 'MANUAL', sourceModel: null, status: 'PENDING',
       acceptedNodeId: null, duplicateNodeId: null, duplicateNodeName: null,
-      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', reviewedAt: null,
     },
     {
       id: '33333333-3333-4333-8333-333333333333', graphId: graph.id,
@@ -34,7 +34,7 @@ const workspace: CandidateWorkspaceView = {
       sourceLocator: '第 5–8 行', sourceStartOffset: 0, sourceEndOffset: 4,
       sourceQuote: '梯度下降', name: '梯度下降', description: '', origin: 'MANUAL', sourceModel: null, status: 'PENDING',
       acceptedNodeId: null, duplicateNodeId: null, duplicateNodeName: null,
-      createdAt: '2026-01-01T00:01:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z',
+      createdAt: '2026-01-01T00:01:00.000Z', updatedAt: '2026-01-01T00:01:00.000Z', reviewedAt: null,
     },
   ],
   relationships: [],
@@ -90,24 +90,26 @@ describe('CandidateWorkspace', () => {
       onGraphUpdated={onGraphUpdated}
       onMessage={vi.fn()}
     />);
-    expect(await screen.findByText('待审核概念')).toBeVisible();
-    const nameInputs = screen.getAllByLabelText('概念名称');
+    expect(await screen.findByText('建议学习的内容')).toBeVisible();
+    expect(screen.getByText('出处与结构检查已完成。你可以直接整体确认，也可以逐项核对。')).toBeVisible();
+    fireEvent.click(screen.getAllByRole('button', { name: '修改' })[0]);
+    const nameInputs = screen.getAllByLabelText('学习内容名称');
     fireEvent.change(nameInputs[0], { target: { value: '一元线性回归' } });
-    fireEvent.click(screen.getAllByRole('button', { name: '保存修改' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '保存并保留' }));
     await waitFor(() => expect(candidates.updateConcept).toHaveBeenCalledWith(expect.objectContaining({ name: '一元线性回归' })));
 
-    fireEvent.click(screen.getByRole('button', { name: '添加关系' }));
+    fireEvent.click(screen.getByText('调整学习顺序（可选）'));
+    fireEvent.click(screen.getByRole('button', { name: '添加学习顺序' }));
     await waitFor(() => expect(candidates.createRelationship).toHaveBeenCalledWith({
       graphId: graph.id,
       sourceCandidateId: workspace.concepts[0].id,
       targetCandidateId: workspace.concepts[1].id,
     }));
-    expect(await screen.findByText((_content, element) => (
-      element?.tagName === 'SPAN' && element.textContent === '线性回归 → 梯度下降'
-    ))).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '确认写入正式图谱' }));
-    expect(screen.getByRole('alertdialog', { name: '将候选内容写入正式图谱？' })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '确认写入图谱' }));
+    expect(await screen.findByRole('button', { name: '移除此顺序' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '加入“机器学习”' }));
+    expect(screen.getByRole('alertdialog', { name: '将这条学习路线加入“机器学习”？' })).toBeVisible();
+    expect(screen.getByText(/已有的 0 个概念和 0 条关系不会被覆盖/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '加入学习路线' }));
     await waitFor(() => expect(candidates.apply).toHaveBeenCalledWith(graph.id));
     expect(onGraphUpdated).toHaveBeenCalledTimes(1);
   });
@@ -124,6 +126,27 @@ describe('CandidateWorkspace', () => {
     />);
     fireEvent.click(await screen.findByRole('button', { name: /课程资料 · 第 1–4 行/ }));
     expect(onNavigateSource).toHaveBeenCalledWith(workspace.concepts[0]);
+  });
+
+  it('lets the user optionally confirm or exclude a suggestion in plain language', async () => {
+    const candidates = installApi();
+    render(<CandidateWorkspace
+      graph={graph}
+      onClose={vi.fn()}
+      onNavigateSource={vi.fn()}
+      onGraphUpdated={vi.fn()}
+      onMessage={vi.fn()}
+    />);
+    fireEvent.click((await screen.findAllByRole('button', { name: '保留' }))[0]);
+    await waitFor(() => expect(candidates.reviewConcept).toHaveBeenCalledWith({
+      candidateId: workspace.concepts[0].id,
+      status: 'PENDING',
+    }));
+    fireEvent.click(screen.getAllByRole('button', { name: '不加入' })[1]);
+    await waitFor(() => expect(candidates.reviewConcept).toHaveBeenCalledWith({
+      candidateId: workspace.concepts[1].id,
+      status: 'IGNORED',
+    }));
   });
 
   it('shows accepted prerequisite relationships in review history', async () => {
@@ -155,9 +178,9 @@ describe('CandidateWorkspace', () => {
       onGraphUpdated={vi.fn()}
       onMessage={vi.fn()}
     />);
-    fireEvent.click(await screen.findByText(/审核历史（2 个概念 · 1 条关系）/));
-    expect(screen.getByText('先修关系记录')).toBeVisible();
-    expect(screen.getByText('已写入图谱')).toBeVisible();
-    expect(screen.getAllByText(/已写入图谱/)).toHaveLength(3);
+    expect(await screen.findByText('这批学习路线已经加入图谱')).toBeVisible();
+    fireEvent.click(screen.getByText(/已排除与已写入记录（2 项内容 · 1 条顺序）/));
+    expect(screen.getByText('学习顺序记录')).toBeVisible();
+    expect(screen.getAllByText(/已加入图谱/)).toHaveLength(3);
   });
 });

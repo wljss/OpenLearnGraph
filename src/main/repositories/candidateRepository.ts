@@ -34,6 +34,7 @@ interface CandidateConceptRow {
   duplicate_node_name: string | null;
   created_at: string;
   updated_at: string;
+  reviewed_at: string | null;
 }
 
 interface CandidateRelationshipRow {
@@ -76,6 +77,7 @@ const CONCEPT_COLUMNS = `c.id, c.graph_id, c.document_id, c.document_title,
   c.document_source_name, c.section_position, c.source_locator,
   c.source_start_offset, c.source_end_offset, c.source_quote, c.name,
   c.description, c.origin, c.source_model, c.status, c.accepted_node_id, c.created_at, c.updated_at,
+  c.reviewed_at,
   (SELECT n.id FROM knowledge_nodes n
    WHERE n.graph_id = c.graph_id AND lower(trim(n.name)) = lower(trim(c.name))
      AND (c.accepted_node_id IS NULL OR n.id <> c.accepted_node_id)
@@ -107,6 +109,7 @@ function toConcept(row: CandidateConceptRow): CandidateConceptView {
     duplicateNodeName: row.duplicate_node_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    reviewedAt: row.reviewed_at,
   };
 }
 
@@ -320,10 +323,10 @@ export class CandidateRepository {
   updateConcept(input: UpdateCandidateConceptInput): CandidateWorkspaceView {
     const now = new Date().toISOString();
     const row = this.database.prepare(
-      `UPDATE candidate_concepts SET name = ?, description = ?, updated_at = ?
+      `UPDATE candidate_concepts SET name = ?, description = ?, updated_at = ?, reviewed_at = ?
        WHERE id = ? AND status = 'PENDING'
        RETURNING graph_id`,
-    ).get(input.name, input.description, now, input.candidateId) as { graph_id: string } | undefined;
+    ).get(input.name, input.description, now, now, input.candidateId) as { graph_id: string } | undefined;
     if (!row) throw new Error('只有待审核的候选概念可以编辑');
     return this.workspace(row.graph_id);
   }
@@ -334,10 +337,10 @@ export class CandidateRepository {
     try {
       const row = this.database.prepare(
         `UPDATE candidate_concepts
-         SET status = ?, updated_at = ?, reviewed_at = CASE WHEN ? = 'IGNORED' THEN ? ELSE NULL END
+         SET status = ?, updated_at = ?, reviewed_at = ?
          WHERE id = ? AND status <> 'ACCEPTED'
          RETURNING graph_id`,
-      ).get(status, now, status, now, candidateId) as { graph_id: string } | undefined;
+      ).get(status, now, now, candidateId) as { graph_id: string } | undefined;
       if (!row) throw new Error('已写入图谱的候选概念不能更改审核状态');
       if (status === 'IGNORED') {
         this.database.prepare(

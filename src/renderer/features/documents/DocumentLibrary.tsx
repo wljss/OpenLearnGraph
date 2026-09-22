@@ -301,10 +301,10 @@ function ImportedDocumentReader({
       });
       window.getSelection()?.removeAllRanges();
       setSourceSelection(null);
-      onMessage('已创建带原文出处的候选概念，请在写入图谱前审核。', 'success');
+      onMessage('已将这段原文加入学习路线预览；写入图谱前仍可修改或排除。', 'success');
       onCandidateCreated();
     } catch (error) {
-      const message = `候选概念创建失败：${errorMessage(error)}`;
+      const message = `加入学习路线预览失败：${errorMessage(error)}`;
       setReaderError(message);
       onMessage(message, 'error');
     } finally {
@@ -413,10 +413,10 @@ function ImportedDocumentReader({
                 className="candidate-from-selection"
                 type="button"
                 disabled={creatingCandidate || preparingAi || !sourceSelection || !graph || structureDirty || [...sourceSelection.text].length > 2_000}
-                title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : sourceSelection ? '保留原文出处并进入人工审核' : '请先在正文中选中文字'}
+                title={!graph ? '请先创建知识图谱' : structureDirty ? '请先保存图谱结构' : sourceSelection ? '保留原文出处并加入学习路线预览' : '请先在正文中选中文字'}
                 onClick={() => void createCandidate()}
               >
-                {creatingCandidate ? '创建中…' : sourceSelection ? `创建候选概念（${[...sourceSelection.text].length} 字）` : '选中文字后创建候选'}
+                {creatingCandidate ? '加入中…' : sourceSelection ? `加入路线预览（${[...sourceSelection.text].length} 字）` : '选中文字后加入路线'}
               </button>
               <button
                 className="ai-generate-section"
@@ -709,9 +709,9 @@ export function DocumentLibrary({
                 <button
                   type="button"
                   disabled={busy || structureDirty}
-                  title={structureDirty ? '请先保存图谱结构' : '审核资料产生的候选概念和关系'}
+                  title={structureDirty ? '请先保存图谱结构' : '查看准备加入当前图谱的学习内容与顺序'}
                   onClick={() => setCandidateWorkspaceGraph(activeGraph)}
-                >候选图谱</button>
+                >学习路线预览</button>
               )}
               {current && <button type="button" disabled={busy} onClick={returnToLibrary}>返回资料库</button>}
               <button className="modal-close" type="button" aria-label="关闭资料库" disabled={busy} onClick={requestClose}>×</button>

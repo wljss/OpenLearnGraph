@@ -24,8 +24,20 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
 }): React.JSX.Element {
   const [name, setName] = useState(concept.name);
   const [description, setDescription] = useState(concept.description);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const changed = name !== concept.name || description !== concept.description;
+  const pending = concept.status === 'PENDING';
+  const needsRename = pending && Boolean(concept.duplicateNodeId);
+  const statusLabel = concept.status === 'ACCEPTED'
+    ? '已加入图谱'
+    : concept.status === 'IGNORED'
+      ? '已排除'
+      : needsRename
+        ? '需要改名'
+        : concept.reviewedAt
+          ? '已核对保留'
+          : '建议加入';
 
   const save = async (): Promise<void> => {
     if (!name.trim() || !changed) return;
@@ -36,9 +48,10 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
         name,
         description,
       }));
-      onMessage('候选概念已保存。', 'success');
+      setEditing(false);
+      onMessage(`“${name.trim()}”已更新并保留在学习路线中。`, 'success');
     } catch (error) {
-      onMessage(`候选概念保存失败：${errorMessage(error)}`, 'error');
+      onMessage(`学习内容修改失败：${errorMessage(error)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -51,18 +64,29 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
         candidateId: concept.id,
         status,
       }));
-      onMessage(status === 'IGNORED' ? '候选概念已忽略，审核记录仍会保留。' : '候选概念已恢复为待审核。', 'success');
+      if (status === 'IGNORED') onMessage(`已从本次学习路线排除“${concept.name}”；记录仍会保留。`, 'success');
+      else if (concept.status === 'IGNORED') onMessage(`已将“${concept.name}”重新加入学习路线。`, 'success');
+      else onMessage(`已确认保留“${concept.name}”。`, 'success');
     } catch (error) {
-      onMessage(`候选概念状态更新失败：${errorMessage(error)}`, 'error');
+      onMessage(`学习内容状态更新失败：${errorMessage(error)}`, 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  const cancelEditing = (): void => {
+    setName(concept.name);
+    setDescription(concept.description);
+    setEditing(false);
+  };
+
   return (
-    <article className={`candidate-card candidate-${concept.status.toLocaleLowerCase()}`}>
+    <article className={`candidate-card candidate-${concept.status.toLocaleLowerCase()}${concept.reviewedAt ? ' candidate-reviewed' : ''}${needsRename ? ' candidate-needs-attention' : ''}`}>
       <header>
-        <span>{concept.status === 'PENDING' ? '待审核' : concept.status === 'ACCEPTED' ? '已写入图谱' : '已忽略'}{concept.origin === 'AI' ? ` · AI ${concept.sourceModel ?? ''}` : ' · 手工'}</span>
+        <div className="candidate-card-labels">
+          <span>{statusLabel}</span>
+          <small>{concept.origin === 'AI' ? `AI 建议 · ${concept.sourceModel ?? 'DeepSeek'}` : '由你从原文添加'}</small>
+        </div>
         <button
           type="button"
           disabled={!concept.documentId}
@@ -72,30 +96,50 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
           {concept.documentTitle} · {concept.sourceLocator}
         </button>
       </header>
-      <blockquote>{concept.sourceQuote}</blockquote>
-      {concept.status === 'PENDING' ? <>
-        <label>
-          概念名称
-          <input value={name} maxLength={160} disabled={busy || saving} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label>
-          概念描述
-          <textarea value={description} maxLength={10_000} disabled={busy || saving} placeholder="说明这个概念是什么，以及学习它的意义……" onChange={(event) => setDescription(event.target.value)} />
-        </label>
-        {concept.duplicateNodeId && <p className="candidate-duplicate" role="alert">与正式图谱中的“{concept.duplicateNodeName}”重名，请修改名称后再写入。</p>}
+
+      {!editing && <div className="candidate-concept-summary">
+        <h4>{concept.name}</h4>
+        <p>{concept.description || '尚未填写说明；可以直接保留，也可以补充成更适合自己的表述。'}</p>
+      </div>}
+
+      <details className="candidate-source-evidence">
+        <summary>查看支持这项建议的原文</summary>
+        <blockquote>{concept.sourceQuote}</blockquote>
+      </details>
+
+      {needsRename && <p className="candidate-duplicate" role="alert">
+        图谱中已经有“{concept.duplicateNodeName}”。请换一个更具体的名称，或者不加入这项内容。
+      </p>}
+
+      {pending && editing ? <>
+        <div className="candidate-edit-fields">
+          <label>
+            学习内容名称
+            <input value={name} maxLength={160} disabled={busy || saving} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            给学习者的说明
+            <textarea value={description} maxLength={10_000} disabled={busy || saving} placeholder="用自己的话说明它是什么、为什么值得学习……" onChange={(event) => setDescription(event.target.value)} />
+          </label>
+        </div>
         <footer>
-          <button type="button" disabled={busy || saving} onClick={() => void review('IGNORED')}>忽略</button>
+          <button type="button" disabled={busy || saving} onClick={cancelEditing}>取消修改</button>
           <button className="primary-button" type="button" disabled={busy || saving || !changed || !name.trim()} onClick={() => void save()}>
-            {saving ? '处理中…' : '保存修改'}
+            {saving ? '保存中…' : '保存并保留'}
           </button>
         </footer>
-      </> : <>
-        <h4>{concept.name}</h4>
-        <p>{concept.description || '未填写描述'}</p>
-        {concept.status === 'IGNORED' && <footer>
-          <button type="button" disabled={busy || saving} onClick={() => void review('PENDING')}>恢复审核</button>
-        </footer>}
-      </>}
+      </> : pending ? <footer>
+        <button type="button" disabled={busy || saving} onClick={() => setEditing(true)}>{needsRename ? '修改名称' : '修改'}</button>
+        <button className="candidate-exclude-button" type="button" disabled={busy || saving} onClick={() => void review('IGNORED')}>不加入</button>
+        {!needsRename && !concept.reviewedAt && (
+          <button className="primary-button" type="button" disabled={busy || saving} onClick={() => void review('PENDING')}>
+            {saving ? '处理中…' : '保留'}
+          </button>
+        )}
+        {!needsRename && concept.reviewedAt && <span className="candidate-reviewed-note">✓ 已核对</span>}
+      </footer> : concept.status === 'IGNORED' ? <footer>
+        <button type="button" disabled={busy || saving} onClick={() => void review('PENDING')}>重新加入路线</button>
+      </footer> : null}
     </article>
   );
 }
@@ -115,7 +159,7 @@ export function CandidateWorkspace({
     void window.openLearnGraph.candidates.getWorkspace(graph.id).then((result) => {
       if (active) setWorkspace(result);
     }).catch((error: unknown) => {
-      if (active) onMessage(`候选图谱加载失败：${errorMessage(error)}`, 'error');
+      if (active) onMessage(`学习路线预览加载失败：${errorMessage(error)}`, 'error');
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -126,6 +170,14 @@ export function CandidateWorkspace({
     () => workspace?.concepts.filter((concept) => concept.status === 'PENDING') ?? [],
     [workspace],
   );
+  const accepted = useMemo(
+    () => workspace?.concepts.filter((concept) => concept.status === 'ACCEPTED') ?? [],
+    [workspace],
+  );
+  const ignored = useMemo(
+    () => workspace?.concepts.filter((concept) => concept.status === 'IGNORED') ?? [],
+    [workspace],
+  );
   const history = useMemo(
     () => workspace?.concepts.filter((concept) => concept.status !== 'PENDING') ?? [],
     [workspace],
@@ -134,10 +186,16 @@ export function CandidateWorkspace({
     () => workspace?.relationships.filter((relationship) => relationship.status !== 'PENDING') ?? [],
     [workspace],
   );
+  const pendingRelationships = useMemo(
+    () => workspace?.relationships.filter((relationship) => relationship.status === 'PENDING') ?? [],
+    [workspace],
+  );
   const conceptById = useMemo(
     () => new Map(workspace?.concepts.map((concept) => [concept.id, concept]) ?? []),
     [workspace],
   );
+  const reviewedPendingCount = pending.filter((concept) => concept.reviewedAt).length;
+  const unreviewedPendingCount = pending.length - reviewedPendingCount;
 
   const effectiveSourceId = pending.some((concept) => concept.id === sourceId)
     ? sourceId
@@ -156,9 +214,9 @@ export function CandidateWorkspace({
         sourceCandidateId: effectiveSourceId,
         targetCandidateId: effectiveTargetId,
       }));
-      onMessage('候选先修关系已添加。', 'success');
+      onMessage('学习顺序已添加；应用已确认它不会形成循环。', 'success');
     } catch (error) {
-      onMessage(`候选关系添加失败：${errorMessage(error)}`, 'error');
+      onMessage(`学习顺序添加失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -168,8 +226,9 @@ export function CandidateWorkspace({
     setBusy(true);
     try {
       setWorkspace(await window.openLearnGraph.candidates.deleteRelationship(relationshipId));
+      onMessage('已移除这条学习顺序。', 'success');
     } catch (error) {
-      onMessage(`候选关系删除失败：${errorMessage(error)}`, 'error');
+      onMessage(`学习顺序移除失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
@@ -182,13 +241,17 @@ export function CandidateWorkspace({
       const result = await window.openLearnGraph.candidates.apply(graph.id);
       onGraphUpdated(result.graph);
       setWorkspace(await window.openLearnGraph.candidates.getWorkspace(graph.id));
-      onMessage(`已将 ${result.acceptedConceptCount} 个概念和 ${result.acceptedRelationshipCount} 条先修关系写入图谱。`, 'success');
+      onMessage(`学习路线已加入“${graph.name}”：新增 ${result.acceptedConceptCount} 个学习内容和 ${result.acceptedRelationshipCount} 条学习顺序。`, 'success');
     } catch (error) {
-      onMessage(`候选图谱写入失败：${errorMessage(error)}`, 'error');
+      onMessage(`学习路线写入失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
   };
+
+  const applyDescription = workspace
+    ? `将新增 ${workspace.pendingConceptCount} 个学习内容和 ${workspace.pendingRelationshipCount} 条学习顺序。图谱中已有的 ${graph.nodes.length} 个概念和 ${graph.edges.length} 条关系不会被覆盖。${unreviewedPendingCount ? `其中 ${unreviewedPendingCount} 项尚未逐项标记“保留”；继续代表你接受应用已完成本地校验的整体方案。` : '你已经逐项核对了所有待加入内容。'}`
+    : '';
 
   return (
     <>
@@ -196,82 +259,132 @@ export function CandidateWorkspace({
         <section className="candidate-workspace" role="dialog" aria-modal="true" aria-labelledby="candidate-workspace-title" onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div>
-              <span>人工审核 · 写入前始终是候选图谱</span>
-              <h3 id="candidate-workspace-title">{graph.name} · 候选概念</h3>
-              <p>每个候选项都保留原文出处。当前阶段完全本地，不调用 AI API。</p>
+              <span>写入前预览 · 你保留最终决定权</span>
+              <h3 id="candidate-workspace-title">学习路线预览</h3>
+              <p>目标图谱：{graph.name}。应用负责核对出处、重名和循环；你只需排除不需要的内容，或调整不合适的表述。</p>
             </div>
-            <button type="button" aria-label="关闭候选图谱" disabled={busy} onClick={onClose}>×</button>
+            <button type="button" aria-label="关闭学习路线预览" disabled={busy} onClick={onClose}>×</button>
           </header>
-          {loading ? <p className="candidate-loading">正在读取候选图谱……</p> : workspace ? (
+          {loading ? <p className="candidate-loading">正在准备学习路线预览……</p> : workspace ? (
             <div className="candidate-workspace-body">
+              <section className={`candidate-route-overview${workspace.blockingIssues.length ? ' has-issues' : ''}`} aria-label="学习路线概览">
+                <div className="candidate-route-status">
+                  <div><span>目标图谱</span><strong>{graph.name}</strong></div>
+                  <p>{workspace.blockingIssues.length
+                    ? '有少量冲突需要处理，解决后即可加入图谱。'
+                    : pending.length
+                      ? '出处与结构检查已完成。你可以直接整体确认，也可以逐项核对。'
+                      : accepted.length
+                        ? '当前没有待处理建议，已完成的审核记录保留在下方。'
+                        : '当前没有准备加入图谱的内容。'}</p>
+                </div>
+                <div className="candidate-route-stats">
+                  <span><small>准备加入</small><strong>{pending.length}</strong><em>项内容</em></span>
+                  <span><small>学习顺序</small><strong>{pendingRelationships.length}</strong><em>条建议</em></span>
+                  <span><small>已逐项核对</small><strong>{reviewedPendingCount}</strong><em>不强制逐项确认</em></span>
+                  <span className={workspace.blockingIssues.length ? 'needs-attention' : ''}><small>需要处理</small><strong>{workspace.blockingIssues.length}</strong><em>{workspace.blockingIssues.length ? '解决后可加入' : '检查已通过'}</em></span>
+                </div>
+              </section>
+
               {workspace.blockingIssues.length > 0 && (
-                <ul className="candidate-issues" role="alert">{workspace.blockingIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                <section className="candidate-issues" role="alert">
+                  <strong>请先处理以下问题</strong>
+                  <ul>{workspace.blockingIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                </section>
               )}
+
               <section className="candidate-list-section">
                 <div className="candidate-section-title">
-                  <h4>待审核概念</h4><span>{pending.length} 个</span>
+                  <div><h4>建议学习的内容</h4><p>默认会加入路线；不确定时可查看原文，明显不需要的内容可以排除。</p></div>
+                  <span>{pending.length} 项</span>
                 </div>
                 {pending.length ? <div className="candidate-card-list">{pending.map((concept) => (
-                  <ConceptCard key={`${concept.id}:${concept.updatedAt}:${concept.status}`} concept={concept} busy={busy} onWorkspace={setWorkspace} onNavigateSource={onNavigateSource} onMessage={onMessage} />
-                ))}</div> : <div className="candidate-empty">在资料正文中选中原文，然后点击“创建候选概念”。</div>}
+                  <ConceptCard key={`${concept.id}:${concept.updatedAt}:${concept.status}:${concept.reviewedAt ?? ''}`} concept={concept} busy={busy} onWorkspace={setWorkspace} onNavigateSource={onNavigateSource} onMessage={onMessage} />
+                ))}</div> : accepted.length ? (
+                  <div className="candidate-success-state"><span aria-hidden="true">✓</span><strong>这批学习路线已经加入图谱</strong><p>可以返回图谱，从当前可学习的概念或“下一步建议”开始。</p></div>
+                ) : ignored.length ? (
+                  <div className="candidate-empty">所有建议都已排除。你可以在下方审核记录中重新加入，或返回资料重新生成。</div>
+                ) : <div className="candidate-empty">还没有学习路线建议。请从资料正文选中文字，或使用“AI 生成学习路线”。</div>}
               </section>
 
-              <section className="candidate-relations-section">
-                <div className="candidate-section-title"><h4>候选先修关系</h4><span>{workspace.pendingRelationshipCount} 条</span></div>
-                <div className="candidate-relation-builder">
-                  <select aria-label="先修候选概念" value={effectiveSourceId} disabled={busy || pending.length < 2} onChange={(event) => setSourceId(event.target.value)}>
-                    {pending.map((concept) => <option key={concept.id} value={concept.id}>{concept.name}</option>)}
-                  </select>
-                  <span>是</span>
-                  <select aria-label="后续候选概念" value={effectiveTargetId} disabled={busy || pending.length < 2} onChange={(event) => setTargetId(event.target.value)}>
-                    {pending.filter((concept) => concept.id !== effectiveSourceId).map((concept) => <option key={concept.id} value={concept.id}>{concept.name}</option>)}
-                  </select>
-                  <span>的先修</span>
-                  <button type="button" disabled={busy || pending.length < 2 || !effectiveSourceId || !effectiveTargetId} onClick={() => void createRelationship()}>添加关系</button>
+              {pending.length > 0 && <section className="candidate-relations-section">
+                <div className="candidate-section-title">
+                  <div><h4>建议学习顺序</h4><p>这里只表达“先学什么，再学什么”。不确定的顺序可以移除，不会影响概念本身。</p></div>
+                  <span>{pendingRelationships.length} 条</span>
                 </div>
-                <ol className="candidate-relation-list">{workspace.relationships.filter((item) => item.status === 'PENDING').map((relationship) => (
+                {pendingRelationships.length ? <ol className="candidate-relation-list">{pendingRelationships.map((relationship, index) => (
                   <li key={relationship.id}>
-                    <span><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong> → <strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
-                    <button type="button" disabled={busy} onClick={() => void deleteRelationship(relationship.id)}>删除</button>
+                    <span className="candidate-relation-number">{index + 1}</span>
+                    <span className="candidate-relation-step"><small>先学习</small><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong></span>
+                    <span className="candidate-relation-arrow" aria-hidden="true">→</span>
+                    <span className="candidate-relation-step"><small>再学习</small><strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
+                    <button type="button" disabled={busy} onClick={() => void deleteRelationship(relationship.id)}>移除此顺序</button>
                   </li>
-                ))}</ol>
-              </section>
+                ))}</ol> : <div className="candidate-relation-empty">这批内容没有必须遵循的固定顺序，可以从任意可学习概念开始。</div>}
+
+                <details className="candidate-relation-editor">
+                  <summary>调整学习顺序（可选）</summary>
+                  <p>只有在顺序明显不合适时才需要调整；应用会自动拒绝重复和循环路线。</p>
+                  <div className="candidate-relation-builder">
+                    <label>先学习
+                      <select aria-label="先学习" value={effectiveSourceId} disabled={busy || pending.length < 2} onChange={(event) => setSourceId(event.target.value)}>
+                        {pending.map((concept) => <option key={concept.id} value={concept.id}>{concept.name}</option>)}
+                      </select>
+                    </label>
+                    <span aria-hidden="true">然后</span>
+                    <label>再学习
+                      <select aria-label="再学习" value={effectiveTargetId} disabled={busy || pending.length < 2} onChange={(event) => setTargetId(event.target.value)}>
+                        {pending.filter((concept) => concept.id !== effectiveSourceId).map((concept) => <option key={concept.id} value={concept.id}>{concept.name}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" disabled={busy || pending.length < 2 || !effectiveSourceId || !effectiveTargetId} onClick={() => void createRelationship()}>添加学习顺序</button>
+                  </div>
+                </details>
+              </section>}
 
               {(history.length > 0 || relationshipHistory.length > 0) && <details className="candidate-history">
-                <summary>审核历史（{history.length} 个概念 · {relationshipHistory.length} 条关系）</summary>
+                <summary>已排除与已写入记录（{history.length} 项内容 · {relationshipHistory.length} 条顺序）</summary>
                 {history.length > 0 && <div className="candidate-card-list">{history.map((concept) => (
-                  <ConceptCard key={`${concept.id}:${concept.updatedAt}:${concept.status}`} concept={concept} busy={busy} onWorkspace={setWorkspace} onNavigateSource={onNavigateSource} onMessage={onMessage} />
+                  <ConceptCard key={`${concept.id}:${concept.updatedAt}:${concept.status}:${concept.reviewedAt ?? ''}`} concept={concept} busy={busy} onWorkspace={setWorkspace} onNavigateSource={onNavigateSource} onMessage={onMessage} />
                 ))}</div>}
                 {relationshipHistory.length > 0 && <div className="candidate-relation-history">
-                  <strong>先修关系记录</strong>
+                  <strong>学习顺序记录</strong>
                   <ol className="candidate-relation-list">{relationshipHistory.map((relationship) => (
                     <li key={relationship.id}>
                       <span><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong> → <strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
-                      <em>{relationship.status === 'ACCEPTED' ? '已写入图谱' : '已忽略'}</em>
+                      <em>{relationship.status === 'ACCEPTED' ? '已加入图谱' : '已排除'}</em>
                     </li>
                   ))}</ol>
                 </div>}
               </details>}
             </div>
-          ) : <div className="candidate-empty">候选图谱暂时无法读取，请关闭后重试。</div>}
+          ) : <div className="candidate-empty">学习路线预览暂时无法读取，请关闭后重试。</div>}
           <footer>
-            <span>{workspace ? `${workspace.pendingConceptCount} 个概念 · ${workspace.pendingRelationshipCount} 条关系待写入` : '候选图谱未加载'}</span>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={busy || !workspace?.pendingConceptCount || Boolean(workspace.blockingIssues.length)}
-              onClick={() => setApplyConfirmation(true)}
-            >
-              {busy ? '处理中…' : '确认写入正式图谱'}
-            </button>
+            <span>{workspace
+              ? pending.length
+                ? `准备向“${graph.name}”新增 ${pending.length} 项内容和 ${pendingRelationships.length} 条学习顺序`
+                : '没有待加入内容；审核记录已保留'
+              : '学习路线尚未加载'}</span>
+            {workspace && !pending.length ? (
+              <button className="primary-button" type="button" disabled={busy} onClick={onClose}>完成，返回图谱</button>
+            ) : (
+              <button
+                className="primary-button"
+                type="button"
+                disabled={busy || !workspace?.pendingConceptCount || Boolean(workspace.blockingIssues.length)}
+                onClick={() => setApplyConfirmation(true)}
+              >
+                {busy ? '处理中…' : `加入“${graph.name}”`}
+              </button>
+            )}
           </footer>
         </section>
       </div>
       {applyConfirmation && workspace && (
         <ConfirmDialog
-          title="将候选内容写入正式图谱？"
-          description={`将新增 ${workspace.pendingConceptCount} 个概念和 ${workspace.pendingRelationshipCount} 条先修关系。写入后可在图谱中继续编辑，但候选审核记录会保留。`}
-          confirmLabel="确认写入图谱"
+          title={`将这条学习路线加入“${graph.name}”？`}
+          description={applyDescription}
+          confirmLabel="加入学习路线"
           onCancel={() => setApplyConfirmation(false)}
           onConfirm={() => void apply()}
         />

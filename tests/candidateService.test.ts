@@ -69,6 +69,9 @@ describe('candidate graph review service', () => {
     expect(workspace.concepts.map((item) => item.sourceQuote)).toEqual(expect.arrayContaining([firstQuote, secondQuote]));
     const first = workspace.concepts.find((item) => item.name === '线性回归') as typeof workspace.concepts[number];
     const second = workspace.concepts.find((item) => item.name === '梯度下降') as typeof workspace.concepts[number];
+    expect(first.reviewedAt).toBeNull();
+    workspace = candidateService.reviewConcept({ candidateId: first.id, status: 'PENDING' });
+    expect(workspace.concepts.find((item) => item.id === first.id)?.reviewedAt).toEqual(expect.any(String));
     workspace = candidateService.createRelationship({
       graphId: graph.id,
       sourceCandidateId: first.id,
@@ -112,7 +115,7 @@ describe('candidate graph review service', () => {
     expect(workspace.blockingIssues[0]).toContain('重名');
     expect(() => candidateService.apply(graph.id)).toThrow('重名');
     workspace = candidateService.reviewConcept({ candidateId: candidate.id, status: 'IGNORED' });
-    expect(workspace.concepts[0].status).toBe('IGNORED');
+    expect(workspace.concepts[0]).toMatchObject({ status: 'IGNORED', reviewedAt: expect.any(String) });
     documentRepository.delete(document.id);
     const retained = candidateService.getWorkspace(graph.id).concepts[0];
     expect(retained).toMatchObject({ documentId: null, documentTitle: '基础', status: 'IGNORED' });

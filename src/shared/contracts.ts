@@ -606,6 +606,7 @@ export interface CandidateConceptView {
   duplicateNodeName: string | null;
   createdAt: string;
   updatedAt: string;
+  reviewedAt: string | null;
 }
 export interface CandidateRelationshipView {
   id: string;
