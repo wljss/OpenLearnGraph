@@ -125,6 +125,8 @@ describe('PracticeRunner', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '完成练习' }));
     expect(await screen.findByText('答对 1 / 1 题')).toBeVisible();
+    expect(screen.getByText('完成 形成性练习 · 答对 1/1 题')).toBeVisible();
+    expect(screen.getByText(/回看错题后进行客观诊断/)).toBeVisible();
     expect(screen.getByText('这是一条形成性练习证据，不会直接把概念标记为已掌握。')).toBeVisible();
     expect(onGraphUpdated).toHaveBeenCalled();
   });

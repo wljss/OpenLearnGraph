@@ -17,7 +17,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .graph-list { display: flex; flex-direction: column; gap: 4px; min-height: 36px; overflow: auto; }
 .graph-list button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; color: #bbcec8; background: transparent; text-align: left; font-size: 13px; }
 .graph-list button:hover, .graph-list button.active { color: white; background: #2b554b; }
-.graph-list-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-list-copy { min-width: 0; flex: 1; display: grid; gap: 5px; }
+.graph-list-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-list-progress { display: flex; align-items: center; gap: 7px; color: #88aaa1; font-size: 9px; }
+.graph-list-progress i { height: 3px; min-width: 0; flex: 1; overflow: hidden; border-radius: 999px; background: rgba(209,228,222,.16); }
+.graph-list-progress b { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #70b49f; }
+.graph-list-progress small { min-width: 36px; color: inherit; font-size: inherit; text-align: right; }
+.graph-list button.active .graph-list-progress { color: #b7d3ca; }
 .graph-glyph { color: #83b7aa; }
 .unsaved-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #e8ba67; box-shadow: 0 0 0 2px rgba(232,186,103,.16); }
 .new-graph-form { display: grid; gap: 7px; margin-top: 14px; }
@@ -80,6 +86,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .tutor-paused strong, .tutor-empty strong { color: #50635d; font-size: 11px; }
 .tutor-paused p, .tutor-empty p { margin: 2px 0 0; color: #83908c; font-size: 9px; }
 .tutor-loading { display: block; padding-block: 12px; color: #788a84; background: #f8faf9; font-size: 10px; }
+.graph-progress-overview { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(520px, 1.45fr); gap: 20px; padding: 14px 24px; border-bottom: 1px solid #d7e1de; background: #fff; }
+.graph-progress-primary { min-width: 0; align-self: center; }
+.graph-progress-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.graph-progress-heading > div { min-width: 0; display: grid; gap: 2px; }
+.graph-progress-heading span { color: #668078; font-size: 9px; font-weight: 800; letter-spacing: .06em; }
+.graph-progress-heading strong { overflow: hidden; color: #29463d; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.graph-progress-heading b { color: #347461; font-size: 18px; }
+.graph-progress-track { height: 7px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #e7eeec; }
+.graph-progress-track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#4a8876,#55a384); transition: width .25s ease; }
+.graph-progress-primary > p { margin: 6px 0 0; color: #74837e; font-size: 9px; line-height: 1.45; }
+.graph-progress-empty-actions { display: flex; gap: 8px; margin-top: 8px; }
+.graph-progress-empty-actions button { padding: 5px 8px; color: #316859; border: 1px solid #bfd3cd; border-radius: 6px; background: #f5faf8; font-size: 9px; font-weight: 700; }
+.graph-progress-stats { min-width: 0; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
+.graph-progress-stats > span { min-width: 0; display: grid; align-content: center; padding: 8px 9px; border: 1px solid #e0e7e5; border-radius: 8px; background: #fafcfc; }
+.graph-progress-stats small { color: #72837d; font-size: 8px; font-weight: 750; }
+.graph-progress-stats strong { margin: 1px 0; color: #37564c; font-size: 15px; }
+.graph-progress-stats em { overflow: hidden; color: #8a9793; font-size: 8px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.graph-progress-stats .progress-stat-objective { border-color: #c8dfd5; background: #f2faf6; }
+.graph-progress-stats .progress-stat-objective strong { color: #27704f; }
+.graph-progress-stats .progress-stat-subjective { border-color: #d7dfe8; background: #f6f8fb; }
+.graph-progress-stats .progress-stat-subjective strong { color: #526d8b; }
+.graph-progress-stats .progress-stat-readiness { border-style: dashed; background: #fbfcfc; }
 .content-grid { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
 .graph-stage { position: relative; min-width: 0; height: 100%; background: #eff2f2; }
 .graph-help { position: absolute; z-index: 5; top: 14px; left: 50%; transform: translateX(-50%); padding: 7px 11px; color: #60706c; border: 1px solid #d4dcda; border-radius: 7px; background: rgba(255,255,255,.9); box-shadow: 0 2px 10px rgba(30,55,50,.05); font-size: 10px; white-space: nowrap; }
@@ -290,6 +318,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .node-result-grid span { color: #6d7d78; font-size: 9px; }
 .node-result-grid strong { margin: 5px 0 3px; color: #374d46; font-size: 12px; }
 .node-result-grid small { color: #7f8d89; font-size: 10px; }
+.completion-feedback-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 15px; color: #456158; border: 1px solid #c7ded5; border-radius: 10px; background: linear-gradient(135deg,#eff9f4,#fbfdfc); }
+.completion-feedback-card > span { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; color: #fff; border-radius: 50%; background: #3c8a69; font-size: 14px; font-weight: 800; }
+.completion-feedback-card > div { min-width: 0; display: grid; gap: 3px; }
+.completion-feedback-card small { color: #4d7d6d; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.completion-feedback-card strong { color: #285443; font-size: 13px; }
+.completion-feedback-card p { margin: 1px 0; color: #61766e; font-size: 10px; line-height: 1.55; }
+.completion-feedback-card em { color: #326b58; font-size: 10px; font-style: normal; font-weight: 700; line-height: 1.5; }
+.diagnostic-completion-feedback { margin: 18px 24px 0; }
 .answer-review { margin: 18px 24px; }
 .answer-review h3 { margin: 0 0 10px; color: #435650; font-size: 13px; }
 .answer-review details { margin-bottom: 7px; border: 1px solid #dce4e2; border-radius: 8px; background: #fbfcfc; }
@@ -661,5 +697,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .candidate-workspace > footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 24px; border-top: 1px solid #dbe5e1; background: #fff; }
 .candidate-workspace > footer > span { color: #71817c; font-size: 11px; }
 @media (max-width: 900px) { .candidate-route-overview { grid-template-columns: 1fr; } .candidate-card-list { grid-template-columns: 1fr; } .candidate-relations-section > .candidate-relation-list li { grid-template-columns: auto 1fr auto 1fr; } .candidate-relations-section > .candidate-relation-list li > button { grid-column: 2 / -1; justify-self: end; } }
-@media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .content-grid { grid-template-columns: minmax(0, 1fr) 300px; } .diagnostic-launch, .session-launch, .practice-launch { font-size: 0; } .diagnostic-launch::after { content: "诊断"; font-size: 13px; } .session-launch::after { content: "学习"; font-size: 13px; } .practice-launch::after { content: "练习"; font-size: 13px; } .tutor-recommendation { padding-inline: 18px; } .tutor-main > p { max-width: 540px; } }
-@media (max-width: 760px) { .assessment-backdrop { padding: 12px; } .question-manager-body { grid-template-columns: 1fr; overflow-y: auto; } .question-list-panel { max-height: 220px; border-right: 0; border-bottom: 1px solid #e1e7e5; } .question-purpose > div { grid-template-columns: 1fr; } .diagnostic-node-selector { grid-template-columns: 1fr; } .diagnostic-history li { grid-template-columns: 55px 1fr; } .history-actions { grid-column: 2; } .diagnostic-result-actions { align-items: stretch; flex-direction: column; } .diagnostic-result-actions button { width: 100%; } .practice-footer { align-items: stretch; flex-direction: column; } .practice-footer > div { justify-content: flex-end; } .candidate-workspace-backdrop { padding: 12px; } .candidate-route-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .candidate-relation-builder { grid-template-columns: 1fr; align-items: stretch; } .candidate-relation-builder > span { padding: 0; text-align: center; } .candidate-workspace > footer { align-items: stretch; flex-direction: column; } .candidate-workspace > footer button { width: 100%; } }
+@media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .content-grid { grid-template-columns: minmax(0, 1fr) 300px; } .diagnostic-launch, .session-launch, .practice-launch { font-size: 0; } .diagnostic-launch::after { content: "诊断"; font-size: 13px; } .session-launch::after { content: "学习"; font-size: 13px; } .practice-launch::after { content: "练习"; font-size: 13px; } .tutor-recommendation { padding-inline: 18px; } .tutor-main > p { max-width: 540px; } .graph-progress-overview { grid-template-columns: 1fr; gap: 10px; padding-inline: 18px; } }
+@media (max-width: 760px) { .assessment-backdrop { padding: 12px; } .question-manager-body { grid-template-columns: 1fr; overflow-y: auto; } .question-list-panel { max-height: 220px; border-right: 0; border-bottom: 1px solid #e1e7e5; } .question-purpose > div { grid-template-columns: 1fr; } .diagnostic-node-selector { grid-template-columns: 1fr; } .diagnostic-history li { grid-template-columns: 55px 1fr; } .history-actions { grid-column: 2; } .diagnostic-result-actions { align-items: stretch; flex-direction: column; } .diagnostic-result-actions button { width: 100%; } .practice-footer { align-items: stretch; flex-direction: column; } .practice-footer > div { justify-content: flex-end; } .graph-progress-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .progress-stat-readiness { grid-column: 1 / -1; } .candidate-workspace-backdrop { padding: 12px; } .candidate-route-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .candidate-relation-builder { grid-template-columns: 1fr; align-items: stretch; } .candidate-relation-builder > span { padding: 0; text-align: center; } .candidate-workspace > footer { align-items: stretch; flex-direction: column; } .candidate-workspace > footer button { width: 100%; } }

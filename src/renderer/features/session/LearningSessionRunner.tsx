@@ -333,6 +333,15 @@ export function LearningSessionRunner({
                   <span className={`session-status-badge status-${session.status.toLowerCase()}`}>{statusLabel(session.status)}</span>
                   {session.status === 'COMPLETED' ? (
                     <>
+                      <div className="completion-feedback-card">
+                        <span aria-hidden="true">✓</span>
+                        <div>
+                          <small>学习里程碑</small>
+                          <strong>完成了一次主动学习</strong>
+                          <p>你已经阅读、主动回忆并留下总结。“{session.nodeName}”会进入学习中，但不会因此被误判为已掌握。</p>
+                          <em>下一步：做一次形成性练习巩固记忆，或通过客观诊断确认掌握。</em>
+                        </div>
+                      </div>
                       <h3>这次留下的学习总结</h3>
                       <div className="session-note-preview">{session.notes}</div>
                       <p>完成于 {session.completedAt ? formatDate(session.completedAt) : '—'}。该记录已进入学习证据时间线，但不直接代表掌握。</p>

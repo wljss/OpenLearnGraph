@@ -10,12 +10,14 @@ import type {
   TutorDecisionView,
 } from '../shared/contracts';
 import { projectGraphLearning } from '../shared/learningProjection';
+import { graphProgressPercent, summarizeGraphProgress } from '../shared/graphProgress';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { errorMessage } from './errorMessage';
 import { DiagnosticRunner } from './features/assessment/DiagnosticRunner';
 import { QuestionManager } from './features/assessment/QuestionManager';
 import { GraphCanvas } from './features/knowledge-graph/GraphCanvas';
 import { NodeDetails } from './features/knowledge-graph/NodeDetails';
+import { GraphProgressOverview } from './features/knowledge-graph/GraphProgressOverview';
 import { TutorRecommendation } from './features/tutor/TutorRecommendation';
 import {
   LearningSessionRunner,
@@ -64,7 +66,7 @@ function nextNodePosition(nodes: KnowledgeNodeView[]): { x: number; y: number } 
 
 function toSummary(graph: KnowledgeGraphDocument): GraphSummary {
   const { id, name, createdAt, updatedAt } = graph;
-  return { id, name, createdAt, updatedAt };
+  return { id, name, createdAt, updatedAt, progress: summarizeGraphProgress(graph.nodes) };
 }
 
 export function App(): React.JSX.Element {
@@ -111,7 +113,9 @@ export function App(): React.JSX.Element {
     try {
       const loaded = await window.openLearnGraph.graphs.load(graphId);
       setGraph(loaded);
-      if (!loaded) setGraphs((current) => current.filter((item) => item.id !== graphId));
+      setGraphs((current) => loaded
+        ? current.map((item) => item.id === loaded.id ? toSummary(loaded) : item)
+        : current.filter((item) => item.id !== graphId));
       setSelectedNodeId(null);
       setNewNodeToFocusId(null);
       setDirty(false);
@@ -174,7 +178,11 @@ export function App(): React.JSX.Element {
   }, [selectedNode?.evidenceCount, selectedNode?.id, showNotice]);
 
   const replaceGraph = useCallback((next: KnowledgeGraphDocument): void => {
-    setGraph(projectGraphLearning(next));
+    const projected = projectGraphLearning(next);
+    setGraph(projected);
+    setGraphs((current) => current.map((item) => (
+      item.id === projected.id ? toSummary(projected) : item
+    )));
     setDirty(true);
     showNotice('有尚未保存的更改。按 Ctrl+S 保存。');
   }, [showNotice]);
@@ -277,6 +285,9 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.openLearnGraph.learning.recordEvidence(input);
       setGraph(result.graph);
+      setGraphs((current) => current.map((item) => (
+        item.id === result.graph.id ? toSummary(result.graph) : item
+      )));
       setEvidenceState((current) => ({
         nodeId: result.evidence.nodeId,
         items: [
@@ -350,6 +361,9 @@ export function App(): React.JSX.Element {
 
   const acceptDiagnosticGraph = useCallback((updatedGraph: KnowledgeGraphDocument): void => {
     setGraph(updatedGraph);
+    setGraphs((current) => current.map((item) => (
+      item.id === updatedGraph.id ? toSummary(updatedGraph) : item
+    )));
     setDirty(false);
     setEvidenceState(null);
   }, []);
@@ -545,20 +559,30 @@ export function App(): React.JSX.Element {
         </div>
         <div className="sidebar-heading">学习图谱</div>
         <nav className="graph-list" aria-label="知识图谱列表">
-          {graphs.map((item) => (
-            <button
-              key={item.id}
-              className={item.id === graph?.id ? 'active' : ''}
-              type="button"
-              disabled={interactionBusy}
-              aria-current={item.id === graph?.id ? 'page' : undefined}
-              onClick={() => requestLoadGraph(item.id)}
-            >
-              <span className="graph-glyph" aria-hidden="true">⌘</span>
-              <span className="graph-list-name">{item.name}</span>
-              {item.id === graph?.id && dirty && <span className="unsaved-dot" title="有尚未保存的更改" />}
-            </button>
-          ))}
+          {graphs.map((item) => {
+            const progress = item.progress;
+            const percent = progress ? graphProgressPercent(progress) : 0;
+            return (
+              <button
+                key={item.id}
+                className={item.id === graph?.id ? 'active' : ''}
+                type="button"
+                disabled={interactionBusy}
+                aria-current={item.id === graph?.id ? 'page' : undefined}
+                onClick={() => requestLoadGraph(item.id)}
+              >
+                <span className="graph-glyph" aria-hidden="true">⌘</span>
+                <span className="graph-list-copy">
+                  <span className="graph-list-name">{item.name}</span>
+                  <span className="graph-list-progress" aria-hidden="true">
+                    <i><b style={{ width: `${percent}%` }} /></i>
+                    <small>{progress?.totalConceptCount ? `${percent}%` : '尚无内容'}</small>
+                  </span>
+                </span>
+                {item.id === graph?.id && dirty && <span className="unsaved-dot" title="有尚未保存的更改" />}
+              </button>
+            );
+          })}
         </nav>
         <form className="new-graph-form" onSubmit={createGraph}>
           <input
@@ -654,14 +678,22 @@ export function App(): React.JSX.Element {
         </div>
 
         {graph && (
-          <TutorRecommendation
-            graph={graph}
-            structureDirty={dirty}
-            disabled={interactionBusy}
-            refreshToken={recommendationRevision}
-            onExecute={executeTutorDecision}
-            onMessage={showNotice}
-          />
+          <>
+            <TutorRecommendation
+              graph={graph}
+              structureDirty={dirty}
+              disabled={interactionBusy}
+              refreshToken={recommendationRevision}
+              onExecute={executeTutorDecision}
+              onMessage={showNotice}
+            />
+            <GraphProgressOverview
+              graph={graph}
+              disabled={interactionBusy}
+              onAddNode={addNode}
+              onOpenDocuments={() => setDocumentLibraryOpen(true)}
+            />
+          </>
         )}
 
         <div className="content-grid">

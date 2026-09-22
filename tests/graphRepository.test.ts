@@ -42,6 +42,17 @@ describe('graph persistence', () => {
     expect(restored?.nodes[0].position).toEqual({ x: 12.5, y: -8 });
     expect(restored?.nodes[0].status).toBe('AVAILABLE');
     expect(restored?.edges[0]).toMatchObject({ sourceNodeId: sourceId, targetNodeId: targetId });
+    expect(service.list()[0].progress).toEqual({
+      totalConceptCount: 2,
+      masteredCount: 0,
+      objectivelyMasteredCount: 0,
+      selfAssessedMasteredCount: 0,
+      learningCount: 0,
+      availableCount: 1,
+      lockedCount: 1,
+      reviewDueCount: 0,
+      diagnosticReadyCount: 0,
+    });
   });
   it('removes connected edges when a node is removed from the saved document', () => {
     const graph = service.create({ name: '测试图谱' });

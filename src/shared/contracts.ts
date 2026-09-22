@@ -297,7 +297,24 @@ export type ReviewCandidateConceptInput = z.infer<typeof reviewCandidateConceptI
 export type CreateCandidateRelationshipInput = z.infer<typeof createCandidateRelationshipInputSchema>;
 export type SaveAiSettingsInput = z.infer<typeof saveAiSettingsInputSchema>;
 export type PreviewAiCandidateGenerationInput = z.infer<typeof previewAiCandidateGenerationInputSchema>;
-export interface GraphSummary { id: string; name: string; createdAt: string; updatedAt: string }
+export interface GraphProgressSummary {
+  totalConceptCount: number;
+  masteredCount: number;
+  objectivelyMasteredCount: number;
+  selfAssessedMasteredCount: number;
+  learningCount: number;
+  availableCount: number;
+  lockedCount: number;
+  reviewDueCount: number;
+  diagnosticReadyCount: number;
+}
+export interface GraphSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  progress?: GraphProgressSummary;
+}
 export interface KnowledgeNodeView {
   id: string; graphId: string; name: string; description: string;
   position: { x: number; y: number }; status: NodeStatus;

@@ -186,6 +186,9 @@ describe('renderer user flows', () => {
     });
     render(<App />);
     await screen.findByText('已从本机加载知识图谱。');
+    expect(screen.getByRole('progressbar', { name: '图谱学习进度' })).toHaveAttribute('aria-valuenow', '0');
+    expect(screen.getByText('0 / 1 个概念已掌握')).toBeVisible();
+    expect(screen.getByText('题库覆盖，不计入进度')).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: /添加概念/ }));
     const nameInput = screen.getByLabelText('名称');
@@ -307,6 +310,8 @@ describe('renderer user flows', () => {
         statusReason: '最近一次自评表明你已能独立运用这个概念。',
         evidenceCount: 1,
         lastEvidenceAt: evidence.occurredAt,
+        latestEvidenceKind: 'SELF_ASSESSMENT',
+        mostRecentEvidenceKind: 'SELF_ASSESSMENT',
       }],
     };
     const api = installApi({
@@ -332,5 +337,7 @@ describe('renderer user flows', () => {
     expect(await screen.findByText('最近一次自评表明你已能独立运用这个概念。')).toBeVisible();
     expect(await screen.findByText('自评 4/5 · 能独立完成')).toBeVisible();
     expect(screen.getByText('可以独立完成推导')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: '图谱学习进度' })).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('主观掌握').nextElementSibling).toHaveTextContent('1');
   });
 });

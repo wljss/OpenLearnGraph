@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { EvidenceKind, GraphSummary, KnowledgeEdgeView, KnowledgeGraphDocument, KnowledgeNodeView, LearningPhase, SaveGraphInput } from '../../shared/contracts';
+import { summarizeGraphProgress } from '../../shared/graphProgress';
 import { projectGraphLearning } from '../../shared/learningProjection';
 
 interface GraphRow { id: string; name: string; created_at: string; updated_at: string }
@@ -30,7 +31,13 @@ export class GraphRepository {
     const rows = this.database.prepare(
       'SELECT id, name, created_at, updated_at FROM knowledge_graphs ORDER BY updated_at DESC',
     ).all() as unknown as GraphRow[];
-    return rows.map(toSummary);
+    return rows.map((row) => {
+      const graph = this.load(row.id);
+      return {
+        ...toSummary(row),
+        ...(graph ? { progress: summarizeGraphProgress(graph.nodes) } : {}),
+      };
+    });
   }
 
   create(name: string): KnowledgeGraphDocument {

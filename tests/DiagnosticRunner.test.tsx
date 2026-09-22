@@ -165,6 +165,8 @@ describe('DiagnosticRunner', () => {
       ],
     }));
     expect(await screen.findByRole('heading', { name: '答对 1 / 2 题' })).toBeVisible();
+    expect(screen.getByText('0/1 个概念达到客观掌握标准')).toBeVisible();
+    expect(screen.getByText(/先回顾未通过概念的错题与解析/)).toBeVisible();
     expect(screen.getByText('正确答案：答案 C')).toBeVisible();
     expect(onGraphUpdated).toHaveBeenCalledWith(result().graph);
   });

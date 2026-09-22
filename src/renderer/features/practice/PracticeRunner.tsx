@@ -284,6 +284,15 @@ export function PracticeRunner({
                   <span className={`session-status-badge status-${attempt.status.toLowerCase()}`}>{statusLabel(attempt.status)}</span>
                   {attempt.status === 'COMPLETED' ? (
                     <>
+                      <div className="completion-feedback-card">
+                        <span aria-hidden="true">✓</span>
+                        <div>
+                          <small>练习里程碑</small>
+                          <strong>完成 {MODE_LABELS[attempt.mode]} · 答对 {correctCount}/{attempt.questions.length} 题</strong>
+                          <p>这次结果已作为形成性证据保存，但不会直接改变掌握结论。</p>
+                          <em>{attempt.mode === 'REMEDIATE' ? '下一步：重新诊断这个概念，确认薄弱点是否真正改善。' : '下一步：回看错题后进行客观诊断，确认是否真正掌握。'}</em>
+                        </div>
+                      </div>
                       <h3>答对 {correctCount} / {attempt.questions.length} 题</h3>
                       <p>这是一条形成性练习证据，不会直接把概念标记为已掌握。</p>
                       <ol>{attempt.questions.map((question, index) => {

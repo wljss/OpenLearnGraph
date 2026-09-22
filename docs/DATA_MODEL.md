@@ -67,6 +67,8 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 
 此表是 Evidence 的确定性投影缓存，不是独立事实来源。没有客观诊断时，1–3 分自评投影为 `LEARNING`，4–5 分投影为 `MASTERED`；最近一次客观诊断按 80% 阈值投影为 `LEARNING` 或 `MASTERED`。未掌握的先修概念会令非 `MASTERED` 节点显示为 `LOCKED`。
 
+图谱学习进度是读取时从节点状态与决定性 Evidence 类型派生的展示摘要，不新增可写入的“进度”事实。`masteredCount` 只统计投影为 `MASTERED` 的概念；其中 `DIAGNOSTIC_RESULT` 与 `SELF_ASSESSMENT` 分别计入客观确认和主观掌握。诊断题达到 2 道只计入独立的 `diagnosticReadyCount`，不计入掌握进度。图谱列表返回同一份派生摘要，因此侧栏与当前图谱不会使用不同口径。
+
 ## M3 诊断实体
 
 ### assessment_questions / assessment_options

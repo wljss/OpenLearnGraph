@@ -20,6 +20,11 @@ interface CancelConfirmation {
   attemptId: string;
 }
 
+interface DiagnosticImpact {
+  newlyMasteredCount: number;
+  unlockedCount: number;
+}
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
@@ -64,6 +69,7 @@ export function DiagnosticRunner({
   const [tab, setTab] = useState<'setup' | 'history'>('setup');
   const [attempt, setAttempt] = useState<DiagnosticAttemptView | null>(null);
   const [review, setReview] = useState<DiagnosticReviewView | null>(null);
+  const [impact, setImpact] = useState<DiagnosticImpact | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Map<string, string | null>>(new Map());
   const [busy, setBusy] = useState(false);
@@ -198,6 +204,15 @@ export function DiagnosticRunner({
           attemptQuestionId: question.attemptQuestionId,
           selectedOptionId: answers.get(question.attemptQuestionId) ?? null,
         })),
+      });
+      const previousByNodeId = new Map(graph.nodes.map((node) => [node.id, node]));
+      setImpact({
+        newlyMasteredCount: completed.nodeResults.filter((result) => (
+          result.passed && previousByNodeId.get(result.nodeId)?.status !== 'MASTERED'
+        )).length,
+        unlockedCount: completed.graph.nodes.filter((node) => (
+          node.status !== 'LOCKED' && previousByNodeId.get(node.id)?.status === 'LOCKED'
+        )).length,
       });
       setAttempt(null);
       setReview(completed);
@@ -451,6 +466,20 @@ export function DiagnosticRunner({
                 </div>
                 <button className="modal-close" type="button" aria-label="关闭诊断结果" onClick={onClose}>×</button>
               </header>
+              <div className="completion-feedback-card diagnostic-completion-feedback">
+                <span aria-hidden="true">✓</span>
+                <div>
+                  <small>诊断完成</small>
+                  <strong>{review.nodeResults.filter((result) => result.passed).length}/{review.nodeResults.length} 个概念达到客观掌握标准</strong>
+                  <p>
+                    {impact?.newlyMasteredCount
+                      ? `新增 ${impact.newlyMasteredCount} 个客观掌握结论。`
+                      : '本次结果已更新客观掌握证据。'}
+                    {impact?.unlockedCount ? ` 同时解锁 ${impact.unlockedCount} 个后续概念。` : ''}
+                  </p>
+                  <em>{review.nodeResults.some((result) => !result.passed) ? '下一步：先回顾未通过概念的错题与解析，再针对性补强。' : '下一步：继续学习刚刚解锁的内容，或回顾本次答题依据。'}</em>
+                </div>
+              </div>
               <div className="node-result-grid">
                 {review.nodeResults.map((nodeResult) => (
                   <div key={nodeResult.nodeId} className={nodeResult.passed ? 'passed' : 'needs-work'}>

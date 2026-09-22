@@ -139,6 +139,8 @@ describe('LearningSessionRunner', () => {
       notes: '它沿负梯度方向更新参数。',
     }));
     expect(onGraphUpdated).toHaveBeenCalledWith(completedGraph);
+    expect(await screen.findByText('完成了一次主动学习')).toBeVisible();
+    expect(screen.getByText(/不会因此被误判为已掌握/)).toBeVisible();
     expect(await screen.findByText('这次留下的学习总结')).toBeVisible();
   });
 

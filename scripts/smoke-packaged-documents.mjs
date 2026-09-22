@@ -2,7 +2,7 @@
 // loopback DevTools ports; no test-only IPC or production backdoor is shipped.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -404,6 +404,23 @@ async function main() {
     assert.equal(candidateWorkspace.pendingConceptCount, 0);
     assert(candidateWorkspace.concepts.every((item) => item.status === 'ACCEPTED'));
     console.log('通过：界面原文选区、候选关系审核与事务写入');
+
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('完成，返回图谱')).click(); true");
+    await waitForUi(app, "!document.querySelector('.candidate-workspace')");
+    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭资料库\"]').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.graph-progress-overview'))");
+    assert(await app.renderer.evaluate("document.querySelector('.graph-progress-overview')?.textContent?.includes('0 / 2 个概念已掌握') === true"));
+    assert(await app.renderer.evaluate("document.querySelector('.graph-progress-overview')?.textContent?.includes('题库覆盖，不计入进度') === true"));
+    assert.equal(await app.renderer.evaluate("document.querySelector('[aria-label=\"图谱学习进度\"]')?.getAttribute('aria-valuenow')"), '0');
+    console.log('通过：主界面与侧栏按 Evidence 口径展示图谱学习进度');
+    if (globalThis.process.argv.includes('--screenshot')) {
+      const screenshot = await app.renderer.send('Page.captureScreenshot', { format: 'png' });
+      const screenshotDirectory = resolve('test-data/private');
+      const screenshotPath = join(screenshotDirectory, 'smoke-progress.png');
+      await mkdir(screenshotDirectory, { recursive: true });
+      await writeFile(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+      console.log(`截图：${screenshotPath}`);
+    }
 
     await stop(app);
     app = null;
