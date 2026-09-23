@@ -189,6 +189,199 @@ async function waitForUi(app, expression) {
   throw new Error(`桌面界面未达到预期状态：${expression}`);
 }
 
+async function waitForUiUntil(app, expression, waitMs) {
+  const until = Date.now() + waitMs;
+  while (Date.now() < until) {
+    if (await app.renderer.evaluate(expression)) return;
+    await delay(100);
+  }
+  throw new Error(`桌面界面未在 ${waitMs}ms 内达到预期状态：${expression}`);
+}
+
+async function captureScreenshot(app, path) {
+  const screenshot = await app.renderer.send('Page.captureScreenshot', { format: 'png' });
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, Buffer.from(screenshot.data, 'base64'));
+}
+
+async function reviewPrivateBooks(app) {
+  const bookPaths = [
+    resolve('test-data/private/books/AI-Agents-in-Depth-zh-CN.pdf'),
+    resolve('test-data/private/books/AI-Infra-Book.pdf'),
+  ];
+  const reviewDirectory = resolve('test-data/private/beginner-review');
+  const report = {
+    recordedAt: new Date().toISOString(),
+    books: bookPaths.map((path) => basename(path)),
+    steps: [],
+  };
+
+  await app.renderer.evaluate("document.querySelector('.document-library-launch').click(); true");
+  await waitForUi(app, "Boolean(document.querySelector('.document-library-home'))");
+  report.steps.push({ step: 'open-library', result: 'ok' });
+
+  await selectFiles(app, bookPaths);
+  const parseStartedAt = Date.now();
+  await app.renderer.evaluate("Array.from(document.querySelectorAll('.document-library-home button')).find((button) => button.textContent.includes('选择本地资料')).click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.document-review')) && !document.querySelector('.document-review-footer button.primary-button')?.disabled", 180_000);
+  const parseDurationMs = Date.now() - parseStartedAt;
+  const firstPreview = await app.renderer.evaluate(`(() => ({
+    title: document.querySelector('.document-metadata-editor input')?.value ?? '',
+    summary: document.querySelector('.document-summary-bar')?.innerText ?? '',
+    warnings: document.querySelector('.document-warnings')?.innerText ?? '',
+    batch: document.querySelector('.document-review-footer')?.innerText ?? '',
+    headings: Array.from(document.querySelectorAll('.document-reader aside li span')).slice(0, 8).map((item) => item.textContent ?? ''),
+  }))()`);
+  await captureScreenshot(app, join(reviewDirectory, '01-first-book-preview.png'));
+  report.steps.push({ step: 'parse-two-books', result: 'ok', durationMs: parseDurationMs, firstPreview });
+
+  const firstSaveStartedAt = Date.now();
+  await app.renderer.evaluate("document.querySelector('.document-review-footer button.primary-button').click(); true");
+  await waitForUiUntil(app, "document.querySelector('.document-library-header p')?.textContent?.includes('批量预览 2 / 2') === true && !document.querySelector('.document-review-footer button.primary-button')?.disabled", 120_000);
+  const secondPreview = await app.renderer.evaluate(`(() => ({
+    title: document.querySelector('.document-metadata-editor input')?.value ?? '',
+    summary: document.querySelector('.document-summary-bar')?.innerText ?? '',
+    warnings: document.querySelector('.document-warnings')?.innerText ?? '',
+    batch: document.querySelector('.document-review-footer')?.innerText ?? '',
+    headings: Array.from(document.querySelectorAll('.document-reader aside li span')).slice(0, 8).map((item) => item.textContent ?? ''),
+  }))()`);
+  await captureScreenshot(app, join(reviewDirectory, '02-second-book-preview.png'));
+  report.steps.push({
+    step: 'confirm-first-book', result: 'ok', durationMs: Date.now() - firstSaveStartedAt, secondPreview,
+  });
+
+  const secondSaveStartedAt = Date.now();
+  await app.renderer.evaluate("document.querySelector('.document-review-footer button.primary-button').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.document-full-reader')) && !document.querySelector('.document-metadata-editor')", 120_000);
+  const imported = await call(app, 'list()');
+  const extractionQuality = [];
+  for (const document of imported) {
+    const sections = [];
+    for (let offset = 0; offset < document.sectionCount; offset += 50) {
+      sections.push(...await call(app, `listSections(${JSON.stringify(document.id)}, ${offset})`));
+    }
+    const counts = sections.map((section) => section.charCount);
+    const searchTerm = document.sourceName.includes('Infra') ? 'Transformer' : 'Agent';
+    const searchResult = await call(app, `search(${JSON.stringify(document.id)}, ${JSON.stringify(searchTerm)})`);
+    extractionQuality.push({
+      sourceName: document.sourceName,
+      genericPageHeadings: sections.every((section) => /^第 \d+ 页$/.test(section.heading)),
+      shortPageCount: counts.filter((count) => count < 200).length,
+      averageCharactersPerPage: Math.round(counts.reduce((total, count) => total + count, 0) / counts.length),
+      minimumCharactersPerPage: Math.min(...counts),
+      maximumCharactersPerPage: Math.max(...counts),
+      searchTerm,
+      searchHitCount: searchResult.hits.length,
+      searchHasMore: searchResult.hasMore,
+      searchHitPositions: searchResult.hits.slice(0, 10).map((hit) => hit.position),
+    });
+  }
+  report.steps.push({
+    step: 'confirm-second-book', result: 'ok', durationMs: Date.now() - secondSaveStartedAt,
+    imported: imported.map((document) => ({
+      id: document.id,
+      sourceName: document.sourceName,
+      title: document.title,
+      author: document.author,
+      format: document.format,
+      sectionCount: document.sectionCount,
+      characterCount: document.charCount,
+      warningCount: document.warningCount,
+    })),
+    extractionQuality,
+  });
+  await captureScreenshot(app, join(reviewDirectory, '03-final-book-after-import.png'));
+  await app.renderer.evaluate("Array.from(document.querySelectorAll('.document-header-actions button')).find((button) => button.textContent === '返回资料库').click(); true");
+  await waitForUiUntil(app, "document.querySelectorAll('.document-list li').length === 2", 60_000);
+  await captureScreenshot(app, join(reviewDirectory, '03-library-after-import.png'));
+
+  await app.renderer.evaluate("document.querySelector('.document-list li button').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.document-full-reader pre'))", 60_000);
+  await captureScreenshot(app, join(reviewDirectory, '04-reader-first-open.png'));
+  const readerState = await app.renderer.evaluate(`(() => ({
+    header: document.querySelector('.document-full-reader article header')?.innerText ?? '',
+    directory: document.querySelector('.document-full-reader aside')?.innerText ?? '',
+    aiAction: document.querySelector('.ai-generate-section')?.textContent ?? '',
+  }))()`);
+  report.steps.push({ step: 'open-reader', result: 'ok', readerState });
+
+  await app.renderer.evaluate(`(() => {
+    const input = document.getElementById('document-search-input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Transformer');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await waitForUi(app, "document.querySelector('.document-reader-search button')?.disabled === false");
+  await app.renderer.evaluate("document.querySelector('.document-reader-search button').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.document-search-results'))", 60_000);
+  await captureScreenshot(app, join(reviewDirectory, '04b-reader-search-results.png'));
+  report.steps.push({
+    step: 'search-book', result: 'ok', query: 'Transformer',
+    summary: await app.renderer.evaluate("document.querySelector('.document-search-results strong')?.textContent ?? ''"),
+  });
+
+  await app.renderer.evaluate("document.querySelector('.ai-generate-section').click(); true");
+  await waitForUi(app, "Boolean(document.querySelector('.ai-settings-dialog'))");
+  await captureScreenshot(app, join(reviewDirectory, '05-ai-settings-interruption.png'));
+  report.steps.push({
+    step: 'request-ai-without-settings', result: 'settings-required',
+    message: await app.renderer.evaluate("document.querySelector('.notice')?.textContent ?? ''"),
+  });
+  await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭 AI 设置\"]').click(); true");
+  await waitForUi(app, "!document.querySelector('.ai-settings-dialog')");
+
+  await apiCall(app, 'ai', `saveSettings(${JSON.stringify({
+    model: 'deepseek-flash', apiKey: 'sk-private-review-placeholder',
+  })})`);
+  await app.renderer.evaluate("document.querySelector('.ai-generate-section').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.ai-scope-dialog'))", 60_000);
+  await captureScreenshot(app, join(reviewDirectory, '06-ai-scope-empty-graph.png'));
+  report.steps.push({
+    step: 'open-ai-scope', result: 'ok',
+    details: await app.renderer.evaluate(`(() => ({
+      needsGraph: Boolean(document.querySelector('.ai-new-graph')),
+      sectionOptionCount: document.querySelectorAll('#ai-range-start option').length,
+      range: document.querySelector('.ai-range-summary span:nth-child(1) strong')?.textContent ?? '',
+      characters: document.querySelector('.ai-range-summary span:nth-child(2) strong')?.textContent ?? '',
+      batches: document.querySelector('.ai-range-summary span:nth-child(3) strong')?.textContent ?? '',
+      privacyNotice: document.querySelector('.ai-privacy-note strong')?.textContent ?? '',
+    }))()`),
+  });
+
+  await app.renderer.evaluate(`(() => {
+    const input = document.getElementById('ai-new-graph-name');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'AI Agent 学习路线');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await waitForUi(app, "Array.from(document.querySelectorAll('.ai-new-graph button')).some((button) => !button.disabled)");
+  await app.renderer.evaluate("document.querySelector('.ai-new-graph button').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('#ai-target-graph')?.value) && !document.querySelector('.ai-new-graph')", 60_000);
+  await app.renderer.evaluate("document.querySelector('.ai-scope-dialog > footer .primary-button').click(); true");
+  await waitForUiUntil(app, "Boolean(document.querySelector('.ai-generation-dialog'))", 60_000);
+  await captureScreenshot(app, join(reviewDirectory, '07-deepseek-send-confirmation.png'));
+  report.steps.push({
+    step: 'reach-send-confirmation', result: 'stopped-before-upload',
+    details: await app.renderer.evaluate(`(() => ({
+      targetGraph: document.querySelector('.ai-upload-summary span:nth-child(1) strong')?.textContent ?? '',
+      document: document.querySelector('.ai-upload-summary span:nth-child(2) strong')?.textContent ?? '',
+      model: document.querySelector('.ai-upload-summary span:nth-child(3) strong')?.textContent ?? '',
+      range: document.querySelector('.ai-upload-summary span:nth-child(4) strong')?.textContent ?? '',
+      requiresConsent: Boolean(document.querySelector('.ai-consent input[type=checkbox]')),
+      sendDisabled: document.querySelector('.ai-generation-dialog .primary-button')?.disabled ?? false,
+    }))()`),
+  });
+  await app.renderer.evaluate("Array.from(document.querySelectorAll('.ai-generation-dialog button')).find((button) => button.textContent === '暂不发送').click(); true");
+  await waitForUi(app, "!document.querySelector('.ai-generation-dialog')");
+  await apiCall(app, 'ai', 'clearApiKey()');
+
+  await mkdir(reviewDirectory, { recursive: true });
+  const reportPath = join(reviewDirectory, 'session.json');
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(`通过：两本真实书的初学者导入流程已走到 DeepSeek 发送确认前（${parseDurationMs}ms）`);
+  console.log(`体验记录：${reportPath}`);
+}
+
 async function checkFile(app, sample) {
   await selectFile(app, sample.path);
   const preview = (await call(app, 'chooseFiles()')).previews[0];
@@ -257,6 +450,11 @@ async function main() {
     await waitForUi(app, "!document.querySelector('.graph-name') && !document.querySelector('[role=alertdialog]')");
     assert.equal((await apiCall(app, 'graphs', 'list()')).length, 0);
     console.log('通过：首次欢迎、示例体验、任务进度和示例安全删除');
+
+    if (globalThis.process.argv.includes('--review-private-books')) {
+      await reviewPrivateBooks(app);
+      return;
+    }
 
     await selectFiles(app, [samples[2].path, samples[3].path]);
     const batchSelection = await call(app, 'chooseFiles()');

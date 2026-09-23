@@ -101,4 +101,4 @@ npm.cmd test -- tests/localBooks.integration.test.ts
 
 学习状态不写入知识节点。原始证据保存在 `learning_evidence`，独立投影缓存在 `learner_node_states`；学习会话保存在 `learning_sessions`。练习和诊断分别保存不可变题目快照，因此之后编辑题库不会篡改既有历史。练习即时反馈只通过练习接口返回，未提交的诊断恢复接口不会泄露正确答案。学习建议保存在 `tutor_decisions`，记录规则版本、依据、用户响应与失效状态，不充当学习证据。
 
-更多设计说明见 [架构](docs/ARCHITECTURE.md)、[数据模型](docs/DATA_MODEL.md)、[产品规格](docs/PRODUCT_SPEC.md)和[路线图](docs/ROADMAP.md)。
+更多设计说明见 [架构](docs/ARCHITECTURE.md)、[数据模型](docs/DATA_MODEL.md)、[产品规格](docs/PRODUCT_SPEC.md)、[路线图](docs/ROADMAP.md)和持续维护的[初学者体验走查](docs/BEGINNER_USABILITY_REVIEW.md)。
