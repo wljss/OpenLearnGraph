@@ -457,6 +457,22 @@ const MIGRATION_9 = `
     ADD COLUMN source_model TEXT;
 `;
 
+const MIGRATION_10 = `
+  CREATE TABLE IF NOT EXISTS onboarding_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT NOT NULL CHECK (status IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'DISMISSED')),
+    sample_graph_id TEXT REFERENCES knowledge_graphs(id) ON DELETE SET NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  INSERT OR IGNORE INTO onboarding_state
+    (id, status, sample_graph_id, started_at, completed_at, updated_at)
+  SELECT 1,
+         CASE WHEN EXISTS (SELECT 1 FROM knowledge_graphs) THEN 'DISMISSED' ELSE 'NOT_STARTED' END,
+         NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -554,6 +570,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_9);
       database.exec('PRAGMA user_version = 9;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 10) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_10);
+      database.exec('PRAGMA user_version = 10;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

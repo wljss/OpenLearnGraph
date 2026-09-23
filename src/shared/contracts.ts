@@ -29,6 +29,8 @@ export const TUTOR_REASON_CODES = [
   'RESUME_PRACTICE',
 ] as const;
 export type TutorReasonCode = (typeof TUTOR_REASON_CODES)[number];
+export const ONBOARDING_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'DISMISSED'] as const;
+export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
 export const graphIdInputSchema = z.object({ graphId: z.string().uuid() });
 export const nodeIdInputSchema = z.object({
@@ -203,6 +205,9 @@ export const graphEdgeInputSchema = z.object({
   relationship: z.literal('PREREQUISITE'),
 });
 export const unsavedChangesInputSchema = z.boolean();
+export const updateOnboardingStatusInputSchema = z.object({
+  status: z.enum(['IN_PROGRESS', 'COMPLETED', 'DISMISSED']),
+});
 export const recordLearningEvidenceInputSchema = z.discriminatedUnion('kind', [
   z.object({
     nodeId: nodeIdInputSchema.shape.nodeId,
@@ -297,6 +302,7 @@ export type ReviewCandidateConceptInput = z.infer<typeof reviewCandidateConceptI
 export type CreateCandidateRelationshipInput = z.infer<typeof createCandidateRelationshipInputSchema>;
 export type SaveAiSettingsInput = z.infer<typeof saveAiSettingsInputSchema>;
 export type PreviewAiCandidateGenerationInput = z.infer<typeof previewAiCandidateGenerationInputSchema>;
+export type UpdateOnboardingStatusInput = z.infer<typeof updateOnboardingStatusInputSchema>;
 export interface GraphProgressSummary {
   totalConceptCount: number;
   masteredCount: number;
@@ -665,6 +671,24 @@ export interface AiGenerationSectionView {
   locator: string;
   charCount: number;
 }
+export interface OnboardingChecklistView {
+  hasGraph: boolean;
+  hasConcept: boolean;
+  hasRelationship: boolean;
+  hasLearningSession: boolean;
+  hasPractice: boolean;
+  hasDiagnostic: boolean;
+}
+export interface OnboardingStateView {
+  status: OnboardingStatus;
+  sampleGraphId: string | null;
+  checklist: OnboardingChecklistView;
+  updatedAt: string;
+}
+export interface CreateOnboardingSampleResult {
+  state: OnboardingStateView;
+  graph: KnowledgeGraphDocument;
+}
 export interface AiCandidateGenerationPreviewView {
   previewToken: string;
   graphId: string;
@@ -780,6 +804,12 @@ export interface OpenLearnGraphApi {
     generateCandidates(previewToken: string): Promise<AiCandidateGenerationResult>;
     cancelCandidateGeneration(previewToken: string): Promise<void>;
   };
+  onboarding: {
+    getState(): Promise<OnboardingStateView>;
+    updateStatus(input: UpdateOnboardingStatusInput): Promise<OnboardingStateView>;
+    createSample(): Promise<CreateOnboardingSampleResult>;
+    deleteSample(): Promise<OnboardingStateView>;
+  };
   lifecycle: {
     setUnsavedChanges(hasUnsavedChanges: boolean): void;
   };
@@ -814,5 +844,7 @@ export const IPC_CHANNELS = {
   aiSettingsGet: 'ai:settings-get', aiSettingsSave: 'ai:settings-save', aiApiKeyClear: 'ai:api-key-clear',
   aiConnectionTest: 'ai:connection-test', aiCandidatePreview: 'ai:candidate-preview',
   aiCandidateGenerate: 'ai:candidate-generate', aiCandidateCancel: 'ai:candidate-cancel',
+  onboardingStateGet: 'onboarding:state-get', onboardingStatusUpdate: 'onboarding:status-update',
+  onboardingSampleCreate: 'onboarding:sample-create', onboardingSampleDelete: 'onboarding:sample-delete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',
 } as const;

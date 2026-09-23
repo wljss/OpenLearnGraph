@@ -4,6 +4,7 @@ import type {
   KnowledgeGraphDocument,
   KnowledgeNodeView,
   LearningEvidenceView,
+  OnboardingStateView,
   RecordLearningEvidenceInput,
   SaveGraphInput,
   SelfAssessmentRating,
@@ -25,6 +26,10 @@ import {
 } from './features/session/LearningSessionRunner';
 import { PracticeRunner, type PracticeLaunch } from './features/practice/PracticeRunner';
 import { DocumentLibrary } from './features/documents/DocumentLibrary';
+import {
+  OnboardingGuide,
+  type OnboardingTaskKey,
+} from './features/onboarding/OnboardingGuide';
 
 type NoticeTone = 'info' | 'success' | 'error';
 
@@ -71,6 +76,7 @@ function toSummary(graph: KnowledgeGraphDocument): GraphSummary {
 
 export function App(): React.JSX.Element {
   const graphNameInputRef = useRef<HTMLInputElement>(null);
+  const newGraphNameInputRef = useRef<HTMLInputElement>(null);
   const [graphs, setGraphs] = useState<GraphSummary[]>([]);
   const [graph, setGraph] = useState<KnowledgeGraphDocument | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -95,13 +101,22 @@ export function App(): React.JSX.Element {
   const [recommendationRevision, setRecommendationRevision] = useState(0);
   const [sessionDraftDirty, setSessionDraftDirty] = useState(false);
   const [documentLibraryOpen, setDocumentLibraryOpen] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<OnboardingStateView | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingWelcome, setOnboardingWelcome] = useState(false);
   const overlayOpen = Boolean(
-    questionManagerNodeId || diagnosticNodeIds || sessionLaunch || practiceLaunch || documentLibraryOpen,
+    questionManagerNodeId || diagnosticNodeIds || sessionLaunch || practiceLaunch || documentLibraryOpen || onboardingOpen,
   );
   const interactionBusy = busy || learningBusy || overlayOpen;
 
   const showNotice = useCallback((text: string, tone: NoticeTone = 'info'): void => {
     setNotice({ text, tone });
+  }, []);
+
+  const refreshOnboarding = useCallback(async (): Promise<OnboardingStateView> => {
+    const next = await window.openLearnGraph.onboarding.getState();
+    setOnboardingState(next);
+    return next;
   }, []);
 
   useEffect(() => {
@@ -129,9 +144,17 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void window.openLearnGraph.graphs.list().then(async (items) => {
+    void Promise.all([
+      window.openLearnGraph.graphs.list(),
+      window.openLearnGraph.onboarding.getState(),
+    ]).then(async ([items, initialOnboarding]) => {
       if (!active) return;
       setGraphs(items);
+      setOnboardingState(initialOnboarding);
+      if (initialOnboarding.status === 'NOT_STARTED') {
+        setOnboardingWelcome(true);
+        setOnboardingOpen(true);
+      }
       if (items[0]) await loadGraph(items[0].id);
       else {
         showNotice('创建第一个知识图谱，开始搭建学习地图。');
@@ -198,12 +221,13 @@ export function App(): React.JSX.Element {
       setSelectedNodeId(null);
       setNewNodeToFocusId(null);
       showNotice('知识图谱已创建并保存到本机。', 'success');
+      void refreshOnboarding();
     } catch (error) {
       showNotice(`创建失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
-  }, [showNotice]);
+  }, [refreshOnboarding, showNotice]);
 
   const createGraph = (event: React.FormEvent): void => {
     event.preventDefault();
@@ -366,7 +390,8 @@ export function App(): React.JSX.Element {
     )));
     setDirty(false);
     setEvidenceState(null);
-  }, []);
+    void refreshOnboarding();
+  }, [refreshOnboarding]);
 
   const notifySessionChanged = useCallback((): void => {
     setRecommendationRevision((value) => value + 1);
@@ -526,12 +551,13 @@ export function App(): React.JSX.Element {
       setDirty(false);
       setNewNodeToFocusId(null);
       showNotice('全部更改已安全保存到本机。', 'success');
+      void refreshOnboarding();
     } catch (error) {
       showNotice(`保存失败：${errorMessage(error)}`, 'error');
     } finally {
       setBusy(false);
     }
-  }, [busy, dirty, graph, showNotice]);
+  }, [busy, dirty, graph, refreshOnboarding, showNotice]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -543,6 +569,176 @@ export function App(): React.JSX.Element {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [saveGraph]);
+
+  const updateOnboardingStatus = useCallback(async (
+    status: 'IN_PROGRESS' | 'COMPLETED' | 'DISMISSED',
+  ): Promise<OnboardingStateView | null> => {
+    setBusy(true);
+    try {
+      const next = await window.openLearnGraph.onboarding.updateStatus({ status });
+      setOnboardingState(next);
+      return next;
+    } catch (error) {
+      showNotice(`上手引导状态保存失败：${errorMessage(error)}`, 'error');
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, [showNotice]);
+
+  const chooseManualStart = useCallback(async (): Promise<void> => {
+    if (!await updateOnboardingStatus('IN_PROGRESS')) return;
+    setOnboardingOpen(false);
+    setOnboardingWelcome(false);
+    showNotice(graphs.length
+      ? '已进入手工模式。可以选择已有图谱，或在左侧创建新的学习目标。'
+      : '先在左侧输入学习目标名称，再创建第一张图谱。');
+    window.setTimeout(() => newGraphNameInputRef.current?.focus(), 0);
+  }, [graphs.length, showNotice, updateOnboardingStatus]);
+
+  const chooseImportStart = useCallback(async (): Promise<void> => {
+    if (!await updateOnboardingStatus('IN_PROGRESS')) return;
+    setOnboardingOpen(false);
+    setOnboardingWelcome(false);
+    setDocumentLibraryOpen(true);
+    showNotice('请选择本地资料；正文会先在本机解析和预览，不会自动上传。');
+  }, [showNotice, updateOnboardingStatus]);
+
+  const chooseSampleStart = useCallback(async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.openLearnGraph.onboarding.createSample();
+      setOnboardingState(result.state);
+      setGraph(result.graph);
+      setGraphs((current) => [toSummary(result.graph), ...current.filter((item) => item.id !== result.graph.id)]);
+      setSelectedNodeId(null);
+      setNewNodeToFocusId(null);
+      setDirty(false);
+      setOnboardingOpen(false);
+      setOnboardingWelcome(false);
+      setRecommendationRevision((current) => current + 1);
+      showNotice('示例图谱已创建：可以按“下一步建议”体验学习、练习和诊断。', 'success');
+    } catch (error) {
+      showNotice(`示例图谱创建失败：${errorMessage(error)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [showNotice]);
+
+  const finishOnboarding = useCallback(async (): Promise<void> => {
+    const next = await updateOnboardingStatus('COMPLETED');
+    if (!next) return;
+    setOnboardingOpen(false);
+    setOnboardingWelcome(false);
+    showNotice('上手引导已结束；以后仍可从左侧重新打开。', 'success');
+  }, [showNotice, updateOnboardingStatus]);
+
+  const dismissOnboarding = useCallback(async (): Promise<void> => {
+    const next = await updateOnboardingStatus('DISMISSED');
+    if (!next) return;
+    setOnboardingOpen(false);
+    setOnboardingWelcome(false);
+    showNotice('已跳过上手引导；需要时可从左侧重新打开。');
+  }, [showNotice, updateOnboardingStatus]);
+
+  const handleOnboardingTask = useCallback((task: OnboardingTaskKey): void => {
+    setOnboardingOpen(false);
+    setOnboardingWelcome(false);
+    if (task === 'hasGraph') {
+      window.setTimeout(() => newGraphNameInputRef.current?.focus(), 0);
+      showNotice('在左侧输入学习目标名称并创建图谱，或打开“本地资料”从一本书开始。');
+      return;
+    }
+    if (!graph) {
+      window.setTimeout(() => newGraphNameInputRef.current?.focus(), 0);
+      showNotice('请先创建或选择一张知识图谱。', 'error');
+      return;
+    }
+    if (task === 'hasConcept') {
+      addNode();
+      return;
+    }
+    if (task === 'hasRelationship') {
+      if (graph.nodes.length < 2) {
+        addNode();
+        showNotice('已添加第二个概念。保存后，从先学节点右侧拖到后学节点左侧来建立关系。');
+      } else {
+        showNotice('从先学节点右侧连接点拖到后学节点左侧，即可建立先修关系。');
+      }
+      return;
+    }
+    if (dirty) {
+      showNotice('请先保存图谱结构，再进入学习流程。', 'error');
+      return;
+    }
+    if (task === 'hasLearningSession') {
+      const target = graph.nodes.find((node) => node.status !== 'LOCKED' && node.description.trim());
+      if (target) openLearningSession(target.id);
+      else {
+        const editable = graph.nodes.find((node) => node.status !== 'LOCKED') ?? graph.nodes[0];
+        if (editable) setSelectedNodeId(editable.id);
+        showNotice('先为一个已解锁概念补充学习内容，再开始学习会话。', 'error');
+      }
+      return;
+    }
+    if (task === 'hasPractice') {
+      const target = graph.nodes.find((node) => node.status !== 'LOCKED' && node.practiceQuestionCount > 0);
+      if (target) openPractice(target.id);
+      else {
+        const editable = graph.nodes.find((node) => node.status !== 'LOCKED') ?? graph.nodes[0];
+        if (editable) {
+          setSelectedNodeId(editable.id);
+          setQuestionManagerNodeId(editable.id);
+        }
+        showNotice('先为一个已解锁概念准备至少一道练习题。', 'error');
+      }
+      return;
+    }
+    const target = graph.nodes.find((node) => node.status !== 'LOCKED' && node.diagnosticQuestionCount >= 2);
+    if (target) setDiagnosticNodeIds([target.id]);
+    else {
+      const editable = graph.nodes.find((node) => node.status !== 'LOCKED') ?? graph.nodes[0];
+      if (editable) {
+        setSelectedNodeId(editable.id);
+        setQuestionManagerNodeId(editable.id);
+      }
+      showNotice('先为一个已解锁概念准备至少两道诊断题。', 'error');
+    }
+  }, [addNode, dirty, graph, openLearningSession, openPractice, showNotice]);
+
+  const requestDeleteSample = useCallback((): void => {
+    const sampleGraphId = onboardingState?.sampleGraphId;
+    if (!sampleGraphId) return;
+    setOnboardingOpen(false);
+    setConfirmation({
+      title: '删除示例图谱？',
+      description: '示例中的概念、题目、练习、诊断和学习记录都会永久删除。你自己创建的其他图谱不会受到影响。',
+      confirmLabel: '删除示例图谱',
+      destructive: true,
+      action: async () => {
+        setBusy(true);
+        try {
+          const nextOnboarding = await window.openLearnGraph.onboarding.deleteSample();
+          const items = await window.openLearnGraph.graphs.list();
+          setOnboardingState(nextOnboarding);
+          setGraphs(items);
+          if (graph?.id === sampleGraphId) {
+            const nextGraph = items[0] ? await window.openLearnGraph.graphs.load(items[0].id) : null;
+            setGraph(nextGraph);
+            setSelectedNodeId(null);
+            setNewNodeToFocusId(null);
+            setDirty(false);
+            setEvidenceState(null);
+          }
+          showNotice('示例图谱及其示例数据已删除。', 'success');
+        } catch (error) {
+          showNotice(`示例图谱删除失败：${errorMessage(error)}`, 'error');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }, [graph, onboardingState?.sampleGraphId, showNotice]);
 
   const confirmAction = (): void => {
     const action = confirmation?.action;
@@ -573,7 +769,10 @@ export function App(): React.JSX.Element {
               >
                 <span className="graph-glyph" aria-hidden="true">⌘</span>
                 <span className="graph-list-copy">
-                  <span className="graph-list-name">{item.name}</span>
+                  <span className="graph-list-title">
+                    <span className="graph-list-name">{item.name}</span>
+                    {item.id === onboardingState?.sampleGraphId && <small>示例</small>}
+                  </span>
                   <span className="graph-list-progress" aria-hidden="true">
                     <i><b style={{ width: `${percent}%` }} /></i>
                     <small>{progress?.totalConceptCount ? `${percent}%` : '尚无内容'}</small>
@@ -586,6 +785,7 @@ export function App(): React.JSX.Element {
         </nav>
         <form className="new-graph-form" onSubmit={createGraph}>
           <input
+            ref={newGraphNameInputRef}
             aria-label="新图谱名称"
             value={newGraphName}
             maxLength={120}
@@ -603,6 +803,21 @@ export function App(): React.JSX.Element {
           onClick={() => setDocumentLibraryOpen(true)}
         >
           ⇧ 本地资料 <span>M6A</span>
+        </button>
+        <button
+          className="onboarding-launch"
+          type="button"
+          disabled={busy || learningBusy || overlayOpen}
+          onClick={() => {
+            setOnboardingWelcome(false);
+            setOnboardingOpen(true);
+          }}
+        >
+          <span aria-hidden="true">?</span>
+          <strong>上手指南</strong>
+          <small>{onboardingState
+            ? `${Object.values(onboardingState.checklist).filter(Boolean).length} / 6`
+            : '加载中'}</small>
         </button>
         <div className="local-note">数据仅保存在此设备</div>
       </aside>
@@ -748,6 +963,21 @@ export function App(): React.JSX.Element {
           onConfirm={confirmAction}
         />
       )}
+      {onboardingOpen && onboardingState && (
+        <OnboardingGuide
+          state={onboardingState}
+          welcome={onboardingWelcome}
+          busy={busy || learningBusy}
+          onClose={() => setOnboardingOpen(false)}
+          onChooseManual={() => void chooseManualStart()}
+          onChooseImport={() => void chooseImportStart()}
+          onChooseSample={() => void chooseSampleStart()}
+          onDismiss={() => void dismissOnboarding()}
+          onFinish={() => void finishOnboarding()}
+          onTaskAction={handleOnboardingTask}
+          onDeleteSample={requestDeleteSample}
+        />
+      )}
       {questionManagerNode && (
         <QuestionManager
           node={questionManagerNode}
@@ -797,6 +1027,7 @@ export function App(): React.JSX.Element {
             setDirty(false);
             setEvidenceState(null);
             setRecommendationRevision((current) => current + 1);
+            void refreshOnboarding();
           }}
           onMessage={showNotice}
         />

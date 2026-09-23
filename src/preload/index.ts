@@ -22,6 +22,7 @@ import {
   type StartDiagnosticInput,
   type StartPracticeInput,
   type UpdateCandidateConceptInput,
+  type UpdateOnboardingStatusInput,
 } from '../shared/contracts';
 
 const api: OpenLearnGraphApi = {
@@ -98,6 +99,12 @@ const api: OpenLearnGraphApi = {
     previewCandidateGeneration: (input: PreviewAiCandidateGenerationInput) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidatePreview, input),
     generateCandidates: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateGenerate, previewToken),
     cancelCandidateGeneration: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateCancel, previewToken),
+  },
+  onboarding: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.onboardingStateGet),
+    updateStatus: (input: UpdateOnboardingStatusInput) => ipcRenderer.invoke(IPC_CHANNELS.onboardingStatusUpdate, input),
+    createSample: () => ipcRenderer.invoke(IPC_CHANNELS.onboardingSampleCreate),
+    deleteSample: () => ipcRenderer.invoke(IPC_CHANNELS.onboardingSampleDelete),
   },
   lifecycle: {
     setUnsavedChanges: (hasUnsavedChanges: boolean) => {

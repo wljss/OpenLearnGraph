@@ -236,6 +236,28 @@ async function main() {
     await writeFile(longPath, longText);
 
     app = await launch(profile);
+    await waitForUi(app, "Boolean(document.querySelector('.onboarding-welcome'))");
+    assert(await app.renderer.evaluate("document.querySelector('.onboarding-welcome')?.textContent?.includes('不会要求你现在配置 DeepSeek') === true"));
+    assert.equal(await app.renderer.evaluate("Boolean(document.querySelector('.onboarding-welcome input[type=password]'))"), false);
+    if (globalThis.process.argv.includes('--screenshot')) {
+      const screenshot = await app.renderer.send('Page.captureScreenshot', { format: 'png' });
+      const screenshotDirectory = resolve('test-data/private');
+      await mkdir(screenshotDirectory, { recursive: true });
+      await writeFile(join(screenshotDirectory, 'smoke-onboarding.png'), Buffer.from(screenshot.data, 'base64'));
+    }
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.onboarding-start-options button')).find((button) => button.textContent.includes('体验完整示例')).click(); true");
+    await waitForUi(app, "document.querySelector('.graph-name')?.value === '示例：机器学习入门' && document.querySelectorAll('.react-flow__node').length === 3");
+    assert(await app.renderer.evaluate("document.querySelector('.graph-list-title')?.textContent?.includes('示例') === true"));
+    await app.renderer.evaluate("document.querySelector('.onboarding-launch').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.onboarding-checklist'))");
+    assert.equal(await app.renderer.evaluate("document.querySelector('[aria-label=\"上手任务进度\"]')?.getAttribute('aria-valuenow')"), '50');
+    await app.renderer.evaluate("document.querySelector('.onboarding-delete-sample').click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('[role=alertdialog]'))");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).find((button) => button.textContent.includes('删除示例图谱')).click(); true");
+    await waitForUi(app, "!document.querySelector('.graph-name') && !document.querySelector('[role=alertdialog]')");
+    assert.equal((await apiCall(app, 'graphs', 'list()')).length, 0);
+    console.log('通过：首次欢迎、示例体验、任务进度和示例安全删除');
+
     await selectFiles(app, [samples[2].path, samples[3].path]);
     const batchSelection = await call(app, 'chooseFiles()');
     assert.equal(batchSelection.previews.length, 2);

@@ -133,6 +133,20 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
       getSettings: vi.fn(), saveSettings: vi.fn(), clearApiKey: vi.fn(), testConnection: vi.fn(),
       previewCandidateGeneration: vi.fn(), generateCandidates: vi.fn(), cancelCandidateGeneration: vi.fn(),
     },
+    onboarding: {
+      getState: vi.fn().mockResolvedValue({
+        status: 'DISMISSED',
+        sampleGraphId: null,
+        checklist: {
+          hasGraph: false, hasConcept: false, hasRelationship: false,
+          hasLearningSession: false, hasPractice: false, hasDiagnostic: false,
+        },
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      updateStatus: vi.fn(),
+      createSample: vi.fn(),
+      deleteSample: vi.fn(),
+    },
     lifecycle: { setUnsavedChanges: vi.fn() },
   };
   window.openLearnGraph = api;
@@ -142,6 +156,31 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
 describe('renderer user flows', () => {
   beforeEach(() => installApi());
 
+  it('guides a fresh profile and lets the learner choose a manual start', async () => {
+    const freshState = {
+      status: 'NOT_STARTED' as const,
+      sampleGraphId: null,
+      checklist: {
+        hasGraph: false, hasConcept: false, hasRelationship: false,
+        hasLearningSession: false, hasPractice: false, hasDiagnostic: false,
+      },
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const api = installApi();
+    vi.mocked(api.onboarding.getState).mockResolvedValue(freshState);
+    vi.mocked(api.onboarding.updateStatus).mockResolvedValue({ ...freshState, status: 'IN_PROGRESS' });
+
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '把资料变成一条真正可学习的路线' })).toBeVisible();
+    expect(screen.getByText(/不会要求你现在配置 DeepSeek/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /手工建立图谱/ }));
+
+    await waitFor(() => expect(api.onboarding.updateStatus).toHaveBeenCalledWith({ status: 'IN_PROGRESS' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '把资料变成一条真正可学习的路线' })).not.toBeInTheDocument());
+    expect(screen.getByLabelText('新图谱名称')).toHaveFocus();
+    expect(screen.getByRole('button', { name: /上手指南/ })).toHaveTextContent('0 / 6');
+  });
+
   it('loads the shell and explains how to create the first graph', async () => {
     render(<App />);
     await screen.findByText('把学习目标变成一张活的知识地图');
@@ -149,6 +188,7 @@ describe('renderer user flows', () => {
     expect(screen.getByText('创建第一个知识图谱，开始搭建学习地图。')).toBeVisible();
     expect(screen.getByText('先创建知识图谱')).toBeVisible();
     expect(screen.queryByRole('button', { name: '添加第一个概念' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '把资料变成一条真正可学习的路线' })).not.toBeInTheDocument();
   });
 
   it('opens the local document library without requiring a graph', async () => {

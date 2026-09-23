@@ -8,6 +8,7 @@ import { registerCandidateIpc } from './ipc/registerCandidateIpc';
 import { registerDocumentIpc } from './ipc/registerDocumentIpc';
 import { registerGraphIpc } from './ipc/registerGraphIpc';
 import { registerLearningIpc } from './ipc/registerLearningIpc';
+import { registerOnboardingIpc } from './ipc/registerOnboardingIpc';
 import { registerPracticeIpc } from './ipc/registerPracticeIpc';
 import { registerSessionIpc } from './ipc/registerSessionIpc';
 import { hasUnsavedChanges, registerLifecycleIpc } from './ipc/registerLifecycleIpc';
@@ -18,6 +19,7 @@ import { CandidateRepository } from './repositories/candidateRepository';
 import { DocumentRepository } from './repositories/documentRepository';
 import { GraphRepository } from './repositories/graphRepository';
 import { LearningRepository } from './repositories/learningRepository';
+import { OnboardingRepository } from './repositories/onboardingRepository';
 import { PracticeRepository } from './repositories/practiceRepository';
 import { SessionRepository } from './repositories/sessionRepository';
 import { TutorRepository } from './repositories/tutorRepository';
@@ -27,6 +29,7 @@ import { CandidateService } from './services/candidateService';
 import { DocumentService } from './services/documentService';
 import { GraphService } from './services/graphService';
 import { LearningService } from './services/learningService';
+import { OnboardingService } from './services/onboardingService';
 import { PracticeService } from './services/practiceService';
 import { SessionService } from './services/sessionService';
 import { TutorService } from './services/tutorService';
@@ -88,6 +91,7 @@ void app.whenReady().then(() => {
   const documentRepository = new DocumentRepository(database);
   const candidateRepository = new CandidateRepository(database, graphRepository);
   const aiGenerationRepository = new AiGenerationRepository(database);
+  const onboardingRepository = new OnboardingRepository(database, graphRepository);
   const aiService = new AiService(documentRepository, candidateRepository, aiGenerationRepository, {
     settingsPath: path.join(app.getPath('userData'), 'ai-settings.json'),
     secureStorage: safeStorage,
@@ -123,6 +127,7 @@ void app.whenReady().then(() => {
   registerDocumentIpc(new DocumentService(documentRepository));
   registerCandidateIpc(new CandidateService(candidateRepository));
   registerAiIpc(aiService);
+  registerOnboardingIpc(new OnboardingService(onboardingRepository));
   registerLifecycleIpc();
   createWindow();
   app.on('activate', () => {

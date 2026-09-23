@@ -69,6 +69,12 @@ Evidence 采用追加记录。新的自评不会覆盖旧证据，而是更新�
 
 图谱学习进度是读取时从节点状态与决定性 Evidence 类型派生的展示摘要，不新增可写入的“进度”事实。`masteredCount` 只统计投影为 `MASTERED` 的概念；其中 `DIAGNOSTIC_RESULT` 与 `SELF_ASSESSMENT` 分别计入客观确认和主观掌握。诊断题达到 2 道只计入独立的 `diagnosticReadyCount`，不计入掌握进度。图谱列表返回同一份派生摘要，因此侧栏与当前图谱不会使用不同口径。
 
+### onboarding_state
+
+单行表保存 `NOT_STARTED / IN_PROGRESS / COMPLETED / DISMISSED` 引导状态、可选的示例图谱外键及开始/完成/更新时间。六项上手任务不另存“完成标记”，而是在读取时分别检查图谱、概念、关系以及三类真实 Evidence 是否存在；因此任务清单可恢复，但不会成为学习事实或修改 learner state。全新空库初始化为 `NOT_STARTED`，从旧版本迁移且已经存在图谱时初始化为 `DISMISSED`。
+
+示例图谱 ID 只保存在该单行表中。创建示例时，图谱、3 个节点、2 条先修关系和 6 道预置 `BOTH` 题在一个事务中写入；重复创建会返回同一示例。专用删除操作只接受此已记录 ID，删除图谱时由外键级联清理其题目、会话和 Evidence，并将 `sample_graph_id` 置空。
+
 ## M3 诊断实体
 
 ### assessment_questions / assessment_options
