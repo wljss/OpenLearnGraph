@@ -61,11 +61,11 @@ function generatedResponse(overrides: Record<string, unknown> = {}): Response {
           concepts: [
             {
               key: 'linear_regression', name: '线性回归', description: '用线性函数拟合数据。',
-              evidence: { sectionPosition: 0, quote: '线性回归使用损失函数衡量预测误差' },
+              evidence: { sourceId: 'e1' },
             },
             {
               key: 'gradient_descent', name: '梯度下降', description: '迭代优化方法。',
-              evidence: { sectionPosition: 0, quote: '梯度下降通过迭代优化损失函数' },
+              evidence: { sourceId: 'e2' },
             },
           ],
           relationships: [{ sourceKey: 'linear_regression', targetKey: 'gradient_descent' }],
@@ -94,7 +94,7 @@ describe('AiService', () => {
     database.close();
   });
 
-  it('requires an explicit source preview, verifies exact quotes, and creates only review candidates', async () => {
+  it('requires an explicit source preview, maps source ids to exact local quotes, and creates only review candidates', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(generatedResponse());
     const { database, service, graph, document, candidateRepository } = await setup(fetchMock);
     service.saveSettings({ model: 'deepseek-flash', apiKey: 'sk-secret-value' });
@@ -108,7 +108,7 @@ describe('AiService', () => {
     const result = await service.generateCandidates(preview.previewToken);
     expect(result).toMatchObject({ conceptCount: 2, relationshipCount: 1, promptTokens: 321, completionTokens: 87 });
     expect(result.workspace.concepts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: '线性回归', sourceQuote: '线性回归使用损失函数衡量预测误差', origin: 'AI', sourceModel: 'deepseek-flash', status: 'PENDING' }),
+      expect.objectContaining({ name: '线性回归', sourceQuote: '线性回归使用损失函数衡量预测误差。', origin: 'AI', sourceModel: 'deepseek-flash', status: 'PENDING' }),
       expect.objectContaining({ name: '梯度下降', origin: 'AI', status: 'PENDING' }),
     ]));
     expect(result.workspace.relationships[0]).toMatchObject({ status: 'PENDING', relationship: 'PREREQUISITE' });
@@ -119,32 +119,83 @@ describe('AiService', () => {
       status: 'SUCCEEDED', model: 'deepseek-flash', prompt_tokens: 321,
       completion_tokens: 87, concept_count: 2, relationship_count: 1,
     });
-    const request = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as Record<string, unknown>;
+    const request = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)) as {
+      model: string;
+      messages: Array<{ content: string }>;
+      thinking: { type: string };
+      response_format: { type: string };
+    };
     expect(request).toMatchObject({ model: 'deepseek-flash', thinking: { type: 'disabled' }, response_format: { type: 'json_object' } });
-    expect(JSON.stringify(request)).toContain('线性回归');
+    expect(request.messages[1].content).toContain('线性回归');
+    expect(request.messages[1].content).toContain('<EVIDENCE id="e1"');
+    expect(request.messages[1].content).toContain('"sourceId":"e1"');
     database.close();
   });
 
-  it('rejects hallucinated citations without leaving partial candidates', async () => {
-    const badResponse = generatedResponse({
+  it('rejects invented source ids without leaving partial candidates', async () => {
+    const badResponseOverrides = {
       choices: [{
         finish_reason: 'stop',
         message: { content: JSON.stringify({
           concepts: [{
             key: 'fake', name: '伪造概念', description: '',
-            evidence: { sectionPosition: 0, quote: '这句话并不存在于原文中' },
+            evidence: { sourceId: 'e9999' },
+          }],
+          relationships: [],
+        }) },
+      }],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => generatedResponse(badResponseOverrides));
+    const { database, service, graph, document, candidateRepository } = await setup(fetchMock);
+    service.saveSettings({ model: 'deepseek-flash', apiKey: 'sk-secret-value' });
+    const preview = service.previewCandidateGeneration({ graphId: graph.id, documentId: document.id, sectionPositions: [0] });
+    await expect(service.generateCandidates(preview.previewToken)).rejects.toThrow('出处编号无效');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(candidateRepository.workspace(graph.id).concepts).toHaveLength(0);
+    expect(database.prepare('SELECT status, prompt_tokens, completion_tokens FROM ai_generation_runs').get()).toMatchObject({
+      status: 'FAILED', prompt_tokens: 642, completion_tokens: 174,
+    });
+    const retryRequest = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body)) as {
+      messages: Array<{ content: string }>;
+    };
+    expect(retryRequest.messages[1].content).toContain('上一次结果因至少一个 sourceId');
+    database.close();
+  });
+
+  it('retries one locally rejected source id and preserves the total token audit', async () => {
+    const invalid = generatedResponse({
+      choices: [{
+        finish_reason: 'stop',
+        message: { content: JSON.stringify({
+          concepts: [{
+            key: 'linear_regression', name: '线性回归', description: '用线性函数拟合数据。',
+            evidence: { sourceId: 'e9999' },
           }],
           relationships: [],
         }) },
       }],
     });
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(badResponse);
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(invalid)
+      .mockResolvedValueOnce(generatedResponse());
     const { database, service, graph, document, candidateRepository } = await setup(fetchMock);
     service.saveSettings({ model: 'deepseek-flash', apiKey: 'sk-secret-value' });
     const preview = service.previewCandidateGeneration({ graphId: graph.id, documentId: document.id, sectionPositions: [0] });
-    await expect(service.generateCandidates(preview.previewToken)).rejects.toThrow('无法在原文中找到');
-    expect(candidateRepository.workspace(graph.id).concepts).toHaveLength(0);
-    expect(database.prepare('SELECT status FROM ai_generation_runs').get()).toMatchObject({ status: 'FAILED' });
+
+    const result = await service.generateCandidates(preview.previewToken);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      conceptCount: 2,
+      relationshipCount: 1,
+      promptTokens: 642,
+      completionTokens: 174,
+      mergeWarnings: ['已自动重试 1 个出处编号无效的批次'],
+    });
+    expect(candidateRepository.workspace(graph.id).pendingConceptCount).toBe(2);
+    expect(database.prepare(
+      'SELECT status, prompt_tokens, completion_tokens FROM ai_generation_runs',
+    ).get()).toMatchObject({ status: 'SUCCEEDED', prompt_tokens: 642, completion_tokens: 174 });
     database.close();
   });
 
@@ -153,7 +204,7 @@ describe('AiService', () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
       requestIndex += 1;
       const request = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
-      const sectionPosition = Number(/<SECTION position="(\d+)"/.exec(request.messages[1].content)?.[1] ?? 0);
+      expect(request.messages[1].content).toContain('<EVIDENCE id="e1"');
       return new Response(JSON.stringify({
         choices: [{
           finish_reason: 'stop',
@@ -162,7 +213,7 @@ describe('AiService', () => {
               key: `shared_${requestIndex}`,
               name: '共享概念',
               description: requestIndex === 1 ? '简短说明。' : '来自后续批次的更完整概念说明。',
-              evidence: { sectionPosition, quote: '甲甲' },
+              evidence: { sourceId: 'e1' },
             }],
             relationships: [],
           }) },
@@ -202,7 +253,7 @@ describe('AiService', () => {
       expect.objectContaining({
         name: '共享概念',
         description: '来自后续批次的更完整概念说明。',
-        sourceQuote: '甲甲',
+        sourceQuote: '甲'.repeat(320),
       }),
     ]);
     expect(database.prepare(

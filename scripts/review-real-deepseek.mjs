@@ -1,0 +1,275 @@
+// Windows-only, opt-in acceptance check using the packaged app and the user's
+// existing encrypted DeepSeek configuration. It creates pending candidates but
+// never applies them to the formal graph.
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { basename, dirname, join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const executable = resolve('out/OpenLearnGraph-win32-x64/OpenLearnGraph.exe');
+const sourcePath = resolve('test-data/private/books/AI-Infra-Book.pdf');
+const graphName = '真实验收：AI Infra Transformer';
+const sectionPositions = [32, 33, 34, 35];
+const timeoutMs = 30_000;
+
+async function freePort() {
+  const server = createServer();
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  await new Promise((done) => server.close(done));
+  return address.port;
+}
+
+async function findTarget(port, kind, process) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (process.exitCode !== null) throw new Error(`EXE 提前退出，代码 ${process.exitCode}`);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const targets = await response.json();
+      const target = targets.find((item) => item.type === kind && item.webSocketDebuggerUrl);
+      if (target) return target.webSocketDebuggerUrl;
+    } catch { /* The inspector is still starting. */ }
+    await delay(150);
+  }
+  throw new Error(`等待 ${kind} 调试目标超时`);
+}
+
+class DevTools {
+  constructor(socket) {
+    this.socket = socket;
+    this.nextId = 1;
+    this.pending = new Map();
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      const item = this.pending.get(message.id);
+      if (!item) return;
+      this.pending.delete(message.id);
+      if (message.error) item.reject(new Error(message.error.message));
+      else item.resolve(message.result);
+    });
+    socket.addEventListener('close', () => {
+      for (const item of this.pending.values()) item.reject(new Error('调试连接已关闭'));
+      this.pending.clear();
+    });
+  }
+
+  static async connect(url) {
+    const socket = new WebSocket(url);
+    await new Promise((resolveConnection, reject) => {
+      socket.addEventListener('open', resolveConnection, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+    return new DevTools(socket);
+  }
+
+  send(method, params = {}) {
+    const id = this.nextId++;
+    return new Promise((resolveResult, reject) => {
+      this.pending.set(id, { resolve: resolveResult, reject });
+      this.socket.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async evaluate(expression) {
+    const result = await this.send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.text
+        + (result.exceptionDetails.exception?.description ?? ''));
+    }
+    return result.result.value;
+  }
+
+  close() { this.socket.close(); }
+}
+
+async function launch() {
+  const rendererPort = await freePort();
+  const mainPort = await freePort();
+  const env = { ...globalThis.process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+  const output = [];
+  const process = spawn(executable, [
+    '--disable-gpu',
+    '--remote-debugging-address=127.0.0.1',
+    `--remote-debugging-port=${rendererPort}`,
+    `--inspect=127.0.0.1:${mainPort}`,
+  ], { cwd: dirname(executable), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const rememberOutput = (chunk) => {
+    output.push(chunk.toString());
+    if (output.length > 100) output.shift();
+  };
+  process.stdout.on('data', rememberOutput);
+  process.stderr.on('data', rememberOutput);
+  let main;
+  let renderer;
+  try {
+    main = await DevTools.connect(await findTarget(mainPort, 'node', process));
+    renderer = await DevTools.connect(await findTarget(rendererPort, 'page', process));
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+      if (await renderer.evaluate('Boolean(window.openLearnGraph?.ai)')) break;
+      await delay(100);
+    }
+    assert(await renderer.evaluate('Boolean(window.openLearnGraph?.ai)'), 'preload AI 接口未加载');
+    return { process, main, renderer };
+  } catch (error) {
+    main?.close();
+    renderer?.close();
+    process.kill();
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}${output.length ? `\nEXE 输出：\n${output.join('')}` : ''}`,
+      { cause: error },
+    );
+  }
+}
+
+async function stop(app) {
+  if (!app) return;
+  if (app.process.exitCode === null) {
+    try { await app.main.evaluate("process.mainModule.require('electron').app.quit(); true"); }
+    catch { app.process.kill(); }
+  }
+  app.main.close();
+  app.renderer.close();
+  if (app.process.exitCode !== null) return;
+  const exited = new Promise((done) => app.process.once('exit', done));
+  await Promise.race([exited, delay(5_000).then(() => app.process.kill())]);
+}
+
+function apiCall(app, namespace, expression) {
+  return app.renderer.evaluate(`window.openLearnGraph.${namespace}.${expression}`);
+}
+
+async function selectFile(app, path) {
+  await app.main.evaluate(`process.mainModule.require('electron').dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(path)}] }); true`);
+}
+
+function importMetadata(preview) {
+  return {
+    previewToken: preview.previewToken,
+    title: preview.title,
+    author: preview.author,
+    publisher: preview.publisher,
+    language: preview.language,
+    identifier: preview.identifier,
+  };
+}
+
+async function ensureDocument(app) {
+  const documents = await apiCall(app, 'documents', 'list()');
+  const existing = documents.find((document) => document.sourceName === basename(sourcePath));
+  if (existing) return apiCall(app, 'documents', `get(${JSON.stringify(existing.id)})`);
+
+  await selectFile(app, sourcePath);
+  const selection = await apiCall(app, 'documents', 'chooseFiles()');
+  const preview = selection?.previews?.[0];
+  if (!preview) throw new Error(selection?.failures?.[0]?.message ?? '真实测试资料无法解析');
+  if (preview.duplicateDocumentId) {
+    return apiCall(app, 'documents', `get(${JSON.stringify(preview.duplicateDocumentId)})`);
+  }
+  if (!preview.canImport) throw new Error(preview.blockedReason ?? '真实测试资料无法导入');
+  return apiCall(app, 'documents', `confirmImport(${JSON.stringify(importMetadata(preview))})`);
+}
+
+async function ensureGraph(app) {
+  const graphs = await apiCall(app, 'graphs', 'list()');
+  const existing = graphs.find((graph) => graph.name === graphName);
+  if (existing) return apiCall(app, 'graphs', `load(${JSON.stringify(existing.id)})`);
+  return apiCall(app, 'graphs', `create(${JSON.stringify({ name: graphName })})`);
+}
+
+async function main() {
+  assert.equal(globalThis.process.platform, 'win32', '此脚本只支持 Windows');
+  let app;
+  try {
+    app = await launch();
+    const settings = await apiCall(app, 'ai', 'getSettings()');
+    assert(settings.secureStorageAvailable, '当前 Windows 环境无法安全解密 DeepSeek Key');
+    assert(settings.configured, '请先在正式应用的 AI 设置中保存 DeepSeek API Key');
+
+    const connection = await apiCall(app, 'ai', 'testConnection()');
+    console.log(`连接通过：${connection.model}，${connection.latencyMs}ms`);
+
+    const document = await ensureDocument(app);
+    const graph = await ensureGraph(app);
+    const existingWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(graph.id)})`);
+    if (existingWorkspace.pendingConceptCount > 0) {
+      throw new Error(`测试图谱已有 ${existingWorkspace.pendingConceptCount} 个待审核候选，请先在应用中处理后再运行`);
+    }
+
+    const preview = await apiCall(app, 'ai', `previewCandidateGeneration(${JSON.stringify({
+      graphId: graph.id,
+      documentId: document.id,
+      sectionPositions,
+    })})`);
+    assert.deepEqual(preview.sections.map((section) => section.position), sectionPositions);
+    console.log(`发送范围：${preview.documentTitle}，第 33–36 页，${preview.totalCharCount} 字符，${preview.batchCount} 批`);
+
+    const startedAt = Date.now();
+    const result = await apiCall(app, 'ai', `generateCandidates(${JSON.stringify(preview.previewToken)})`);
+    const durationMs = Date.now() - startedAt;
+    const names = new Map(result.workspace.concepts.map((concept) => [concept.id, concept.name]));
+    const report = {
+      recordedAt: new Date().toISOString(),
+      connection,
+      source: {
+        documentId: document.id,
+        documentTitle: preview.documentTitle,
+        sourceName: preview.documentSourceName,
+        sectionPositions: preview.sections.map((section) => section.position),
+        sectionLabels: preview.sections.map((section) => `${section.heading} · ${section.charCount} 字符`),
+        totalCharCount: preview.totalCharCount,
+        batchCount: preview.batchCount,
+      },
+      graph: { id: graph.id, name: graph.name },
+      generation: {
+        durationMs,
+        provider: result.provider,
+        model: result.model,
+        conceptCount: result.conceptCount,
+        relationshipCount: result.relationshipCount,
+        batchCount: result.batchCount,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        mergeWarnings: result.mergeWarnings,
+        blockingIssues: result.workspace.blockingIssues,
+      },
+      concepts: result.workspace.concepts.map((concept) => ({
+        id: concept.id,
+        name: concept.name,
+        description: concept.description,
+        locator: concept.sourceLocator,
+        sourceQuote: concept.sourceQuote,
+        sourceQuoteLength: Array.from(concept.sourceQuote).length,
+        status: concept.status,
+        duplicateNodeName: concept.duplicateNodeName,
+      })),
+      relationships: result.workspace.relationships.map((relationship) => ({
+        source: names.get(relationship.sourceCandidateId) ?? relationship.sourceCandidateId,
+        target: names.get(relationship.targetCandidateId) ?? relationship.targetCandidateId,
+        status: relationship.status,
+      })),
+    };
+    const reportDirectory = resolve('test-data/private/beginner-review');
+    await mkdir(reportDirectory, { recursive: true });
+    const reportPath = join(reportDirectory, 'real-deepseek-session.json');
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    console.log(`生成完成：${result.conceptCount} 个概念，${result.relationshipCount} 条关系，耗时 ${durationMs}ms`);
+    console.log(`Token：输入 ${result.promptTokens ?? '未知'}，输出 ${result.completionTokens ?? '未知'}`);
+    console.log(`候选保留在图谱“${graph.name}”的审核区，尚未写入正式图谱`);
+    console.log(`私有验收记录：${reportPath}`);
+  } finally {
+    await stop(app);
+  }
+}
+
+await main();

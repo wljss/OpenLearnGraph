@@ -44,8 +44,22 @@ export class AiGenerationRepository {
     );
   }
 
-  fail(id: string, message: string): void {
-    this.finish(id, 'FAILED', message);
+  fail(id: string, message: string, usage?: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+  }): void {
+    this.database.prepare(
+      `UPDATE ai_generation_runs
+       SET status = 'FAILED', prompt_tokens = ?, completion_tokens = ?,
+           error_message = ?, completed_at = ?
+       WHERE id = ? AND status = 'IN_PROGRESS'`,
+    ).run(
+      usage?.promptTokens ?? null,
+      usage?.completionTokens ?? null,
+      message.slice(0, 1_000),
+      new Date().toISOString(),
+      id,
+    );
   }
 
   cancel(id: string): void {

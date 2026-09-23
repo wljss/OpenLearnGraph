@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, net, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from './database/database';
@@ -95,6 +95,9 @@ void app.whenReady().then(() => {
   const aiService = new AiService(documentRepository, candidateRepository, aiGenerationRepository, {
     settingsPath: path.join(app.getPath('userData'), 'ai-settings.json'),
     secureStorage: safeStorage,
+    // Chromium's network stack follows the Windows proxy and certificate store.
+    // Node fetch would reject locally trusted HTTPS inspection certificates.
+    fetchImpl: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   });
   registerGraphIpc(new GraphService(graphRepository));
   registerLearningIpc(new LearningService(learningRepository, graphRepository));
