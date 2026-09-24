@@ -43,6 +43,17 @@ interface CandidateRelationshipRow {
   source_candidate_id: string;
   target_candidate_id: string;
   relationship: 'PREREQUISITE';
+  reason: string;
+  origin: 'MANUAL' | 'AI';
+  source_model: string | null;
+  evidence_document_id: string | null;
+  evidence_document_title: string;
+  evidence_document_source_name: string;
+  evidence_section_position: number | null;
+  evidence_source_locator: string;
+  evidence_start_offset: number | null;
+  evidence_end_offset: number | null;
+  evidence_quote: string;
   status: CandidateStatus;
   accepted_edge_id: string | null;
   created_at: string;
@@ -66,7 +77,14 @@ export interface GeneratedCandidateBatchInput {
     name: string;
     description: string;
   }>;
-  relationships: Array<{ sourceIndex: number; targetIndex: number }>;
+  relationships: Array<{
+    sourceIndex: number;
+    targetIndex: number;
+    reason: string;
+    sectionPosition: number;
+    sourceStartOffset: number;
+    sourceEndOffset: number;
+  }>;
 }
 
 function unicodeCodePoints(value: string): string[] {
@@ -120,6 +138,17 @@ function toRelationship(row: CandidateRelationshipRow): CandidateRelationshipVie
     sourceCandidateId: row.source_candidate_id,
     targetCandidateId: row.target_candidate_id,
     relationship: row.relationship,
+    reason: row.reason,
+    origin: row.origin,
+    sourceModel: row.source_model,
+    evidenceDocumentId: row.evidence_document_id,
+    evidenceDocumentTitle: row.evidence_document_title,
+    evidenceDocumentSourceName: row.evidence_document_source_name,
+    evidenceSectionPosition: row.evidence_section_position === null ? null : Number(row.evidence_section_position),
+    evidenceSourceLocator: row.evidence_source_locator,
+    evidenceStartOffset: row.evidence_start_offset === null ? null : Number(row.evidence_start_offset),
+    evidenceEndOffset: row.evidence_end_offset === null ? null : Number(row.evidence_end_offset),
+    evidenceQuote: row.evidence_quote,
     status: row.status,
     acceptedEdgeId: row.accepted_edge_id,
     createdAt: row.created_at,
@@ -148,6 +177,9 @@ function candidateIssues(
   for (const relationship of pendingRelationships) {
     if (!pendingIds.has(relationship.sourceCandidateId) || !pendingIds.has(relationship.targetCandidateId)) {
       issues.push('有先修关系引用了已忽略或已处理的候选概念');
+    }
+    if (relationship.origin === 'AI' && (!relationship.reason.trim() || !relationship.evidenceQuote.trim())) {
+      issues.push('有旧版 AI 学习顺序缺少可核对的原因或原文依据，请移除后重新生成');
     }
   }
   if (hasDirectedCycle(pendingRelationships.map((relationship) => ({
@@ -195,6 +227,9 @@ export class CandidateRepository {
     const visibleIds = new Set(conceptViews.map((concept) => concept.id));
     const relationships = (this.database.prepare(
       `SELECT id, graph_id, source_candidate_id, target_candidate_id, relationship,
+              reason, origin, source_model, evidence_document_id, evidence_document_title,
+              evidence_document_source_name, evidence_section_position, evidence_source_locator,
+              evidence_start_offset, evidence_end_offset, evidence_quote,
               status, accepted_edge_id, created_at
        FROM candidate_relationships
        WHERE graph_id = ?
@@ -256,16 +291,19 @@ export class CandidateRepository {
     })))) throw new Error('AI 返回的候选关系存在循环');
 
     const sources = new Map<number, SourceRow>();
-    for (const concept of input.concepts) {
-      if (sources.has(concept.sectionPosition)) continue;
+    const referencedPositions = new Set([
+      ...input.concepts.map((concept) => concept.sectionPosition),
+      ...input.relationships.map((relationship) => relationship.sectionPosition),
+    ]);
+    for (const sectionPosition of referencedPositions) {
       const source = this.database.prepare(
         `SELECT d.title AS document_title, d.source_name, s.locator, s.content
          FROM imported_documents d
          JOIN imported_document_sections s ON s.document_id = d.id
          WHERE d.id = ? AND s.position = ?`,
-      ).get(input.documentId, concept.sectionPosition) as SourceRow | undefined;
+      ).get(input.documentId, sectionPosition) as SourceRow | undefined;
       if (!source) throw new Error('AI 候选项引用的原文章节已失效');
-      sources.set(concept.sectionPosition, source);
+      sources.set(sectionPosition, source);
     }
 
     const now = new Date().toISOString();
@@ -300,8 +338,12 @@ export class CandidateRepository {
       const insertRelationship = this.database.prepare(
         `INSERT INTO candidate_relationships
          (id, graph_id, source_candidate_id, target_candidate_id, relationship,
+          reason, origin, source_model, evidence_document_id, evidence_document_title,
+          evidence_document_source_name, evidence_section_position, evidence_source_locator,
+          evidence_start_offset, evidence_end_offset, evidence_quote,
           status, accepted_edge_id, created_at, updated_at, reviewed_at)
-         VALUES (?, ?, ?, ?, 'PREREQUISITE', 'PENDING', NULL, ?, ?, NULL)`,
+         VALUES (?, ?, ?, ?, 'PREREQUISITE', ?, 'AI', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 'PENDING', NULL, ?, ?, NULL)`,
       );
       for (const relationship of input.relationships) {
         const sourceId = candidateIds[relationship.sourceIndex];
@@ -310,7 +352,19 @@ export class CandidateRepository {
         const pair = `${sourceId}:${targetId}`;
         if (seenRelationships.has(pair)) throw new Error('AI 返回了重复的候选关系');
         seenRelationships.add(pair);
-        insertRelationship.run(randomUUID(), input.graphId, sourceId, targetId, now, now);
+        const source = sources.get(relationship.sectionPosition) as SourceRow;
+        const characters = unicodeCodePoints(source.content);
+        if (relationship.sourceEndOffset > characters.length) throw new Error('AI 候选关系的原文位置已失效');
+        const sourceQuote = characters.slice(relationship.sourceStartOffset, relationship.sourceEndOffset).join('');
+        if (!relationship.reason.trim() || !sourceQuote.trim() || unicodeCodePoints(sourceQuote).length > 2_000) {
+          throw new Error('AI 候选关系缺少可核对的原因或原文依据');
+        }
+        insertRelationship.run(
+          randomUUID(), input.graphId, sourceId, targetId, relationship.reason, input.model,
+          input.documentId, source.document_title, source.source_name, relationship.sectionPosition,
+          source.locator, relationship.sourceStartOffset, relationship.sourceEndOffset, sourceQuote,
+          now, now,
+        );
       }
       this.database.exec('COMMIT;');
     } catch (error) {

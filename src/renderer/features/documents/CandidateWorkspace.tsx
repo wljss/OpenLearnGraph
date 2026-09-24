@@ -196,6 +196,9 @@ export function CandidateWorkspace({
   );
   const reviewedPendingCount = pending.filter((concept) => concept.reviewedAt).length;
   const unreviewedPendingCount = pending.length - reviewedPendingCount;
+  const explainedAiRelationshipCount = pendingRelationships.filter((relationship) => (
+    relationship.origin === 'AI' && relationship.reason.trim() && relationship.evidenceQuote.trim()
+  )).length;
 
   const effectiveSourceId = pending.some((concept) => concept.id === sourceId)
     ? sourceId
@@ -250,7 +253,7 @@ export function CandidateWorkspace({
   };
 
   const applyDescription = workspace
-    ? `将新增 ${workspace.pendingConceptCount} 个学习内容和 ${workspace.pendingRelationshipCount} 条学习顺序。图谱中已有的 ${graph.nodes.length} 个概念和 ${graph.edges.length} 条关系不会被覆盖。${unreviewedPendingCount ? `其中 ${unreviewedPendingCount} 项尚未逐项标记“保留”；继续代表你接受应用已完成本地校验的整体方案。` : '你已经逐项核对了所有待加入内容。'}`
+    ? `将新增 ${workspace.pendingConceptCount} 个学习内容和 ${workspace.pendingRelationshipCount} 条学习顺序，其中 ${explainedAiRelationshipCount} 条 AI 顺序带有原因与原文依据。图谱中已有的 ${graph.nodes.length} 个概念和 ${graph.edges.length} 条关系不会被覆盖。${unreviewedPendingCount ? `其中 ${unreviewedPendingCount} 项内容尚未逐项标记“保留”；继续代表你接受当前整体方案。` : '你已经逐项核对了所有待加入内容。'}`
     : '';
 
   return (
@@ -261,7 +264,7 @@ export function CandidateWorkspace({
             <div>
               <span>写入前预览 · 你保留最终决定权</span>
               <h3 id="candidate-workspace-title">学习路线预览</h3>
-              <p>目标图谱：{graph.name}。应用负责核对出处、重名和循环；你只需排除不需要的内容，或调整不合适的表述。</p>
+              <p>目标图谱：{graph.name}。应用负责核对出处、重名和循环；AI 学习顺序会同时说明原因，你只需判断这个安排是否说得通。</p>
             </div>
             <button type="button" aria-label="关闭学习路线预览" disabled={busy} onClick={onClose}>×</button>
           </header>
@@ -273,7 +276,7 @@ export function CandidateWorkspace({
                   <p>{workspace.blockingIssues.length
                     ? '有少量冲突需要处理，解决后即可加入图谱。'
                     : pending.length
-                      ? '出处与结构检查已完成。你可以直接整体确认，也可以逐项核对。'
+                      ? '原文与结构检查已完成。AI 内容仍是建议，你可以整体确认，也可以查看原因后排除不合适的顺序。'
                       : accepted.length
                         ? '当前没有待处理建议，已完成的审核记录保留在下方。'
                         : '当前没有准备加入图谱的内容。'}</p>
@@ -309,16 +312,32 @@ export function CandidateWorkspace({
 
               {pending.length > 0 && <section className="candidate-relations-section">
                 <div className="candidate-section-title">
-                  <div><h4>建议学习顺序</h4><p>这里只表达“先学什么，再学什么”。不确定的顺序可以移除，不会影响概念本身。</p></div>
+                  <div><h4>建议学习顺序</h4><p>AI 顺序必须同时给出原因和原文依据。你只需判断“这样学是否更容易理解”；不确定时移除即可，不影响概念本身。</p></div>
                   <span>{pendingRelationships.length} 条</span>
                 </div>
                 {pendingRelationships.length ? <ol className="candidate-relation-list">{pendingRelationships.map((relationship, index) => (
-                  <li key={relationship.id}>
-                    <span className="candidate-relation-number">{index + 1}</span>
-                    <span className="candidate-relation-step"><small>先学习</small><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong></span>
-                    <span className="candidate-relation-arrow" aria-hidden="true">→</span>
-                    <span className="candidate-relation-step"><small>再学习</small><strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
-                    <button type="button" disabled={busy} onClick={() => void deleteRelationship(relationship.id)}>移除此顺序</button>
+                  <li key={relationship.id} className={relationship.origin === 'AI' && (!relationship.reason.trim() || !relationship.evidenceQuote.trim()) ? 'needs-attention' : ''}>
+                    <div className="candidate-relation-route">
+                      <span className="candidate-relation-number">{index + 1}</span>
+                      <span className="candidate-relation-step"><small>先学习</small><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong></span>
+                      <span className="candidate-relation-arrow" aria-hidden="true">→</span>
+                      <span className="candidate-relation-step"><small>再学习</small><strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
+                      <button type="button" disabled={busy} onClick={() => void deleteRelationship(relationship.id)}>移除此顺序</button>
+                    </div>
+                    <div className="candidate-relation-explanation">
+                      <span>{relationship.origin === 'AI' ? `AI 建议 · ${relationship.sourceModel ?? 'DeepSeek'}` : '由你添加'}</span>
+                      <strong>为什么这样安排</strong>
+                      <p>{relationship.reason || (relationship.origin === 'AI'
+                        ? '这条旧版 AI 建议没有保存原因和依据，请移除后重新生成。'
+                        : '这是你手动添加的学习顺序；应用已检查重复和循环。')}</p>
+                    </div>
+                    {relationship.evidenceQuote && <details className="candidate-relation-evidence">
+                      <summary>核对关系依据 · {relationship.evidenceDocumentTitle} · {relationship.evidenceSourceLocator}</summary>
+                      <blockquote>{relationship.evidenceQuote}</blockquote>
+                    </details>}
+                    {relationship.origin === 'AI' && (!relationship.reason.trim() || !relationship.evidenceQuote.trim()) && (
+                      <p className="candidate-relation-warning" role="alert">缺少可核对依据，应用不会允许直接写入图谱。</p>
+                    )}
                   </li>
                 ))}</ol> : <div className="candidate-relation-empty">这批内容没有必须遵循的固定顺序，可以从任意可学习概念开始。</div>}
 
@@ -351,7 +370,7 @@ export function CandidateWorkspace({
                   <strong>学习顺序记录</strong>
                   <ol className="candidate-relation-list">{relationshipHistory.map((relationship) => (
                     <li key={relationship.id}>
-                      <span><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong> → <strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong></span>
+                      <span><strong>{conceptById.get(relationship.sourceCandidateId)?.name}</strong> → <strong>{conceptById.get(relationship.targetCandidateId)?.name}</strong>{relationship.reason && <small>{relationship.reason}</small>}</span>
                       <em>{relationship.status === 'ACCEPTED' ? '已加入图谱' : '已排除'}</em>
                     </li>
                   ))}</ol>

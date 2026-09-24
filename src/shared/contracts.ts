@@ -637,6 +637,17 @@ export interface CandidateRelationshipView {
   sourceCandidateId: string;
   targetCandidateId: string;
   relationship: 'PREREQUISITE';
+  reason: string;
+  origin: CandidateOrigin;
+  sourceModel: string | null;
+  evidenceDocumentId: string | null;
+  evidenceDocumentTitle: string;
+  evidenceDocumentSourceName: string;
+  evidenceSectionPosition: number | null;
+  evidenceSourceLocator: string;
+  evidenceStartOffset: number | null;
+  evidenceEndOffset: number | null;
+  evidenceQuote: string;
   status: CandidateStatus;
   acceptedEdgeId: string | null;
   createdAt: string;

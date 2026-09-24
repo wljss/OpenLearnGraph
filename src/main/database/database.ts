@@ -473,6 +473,41 @@ const MIGRATION_10 = `
          NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
 `;
 
+const MIGRATION_11 = `
+  ALTER TABLE candidate_relationships
+    ADD COLUMN reason TEXT NOT NULL DEFAULT '' CHECK (length(reason) <= 2000);
+  ALTER TABLE candidate_relationships
+    ADD COLUMN origin TEXT NOT NULL DEFAULT 'MANUAL' CHECK (origin IN ('MANUAL', 'AI'));
+  ALTER TABLE candidate_relationships
+    ADD COLUMN source_model TEXT;
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_document_id TEXT REFERENCES imported_documents(id) ON DELETE SET NULL;
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_document_title TEXT NOT NULL DEFAULT '';
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_document_source_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_section_position INTEGER CHECK (evidence_section_position IS NULL OR evidence_section_position >= 0);
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_source_locator TEXT NOT NULL DEFAULT '';
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_start_offset INTEGER CHECK (evidence_start_offset IS NULL OR evidence_start_offset >= 0);
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_end_offset INTEGER CHECK (evidence_end_offset IS NULL OR evidence_end_offset > evidence_start_offset);
+  ALTER TABLE candidate_relationships
+    ADD COLUMN evidence_quote TEXT NOT NULL DEFAULT '' CHECK (length(evidence_quote) <= 2000);
+
+  UPDATE candidate_relationships
+  SET origin = 'AI'
+  WHERE EXISTS (
+    SELECT 1
+    FROM candidate_concepts source
+    JOIN candidate_concepts target ON target.id = candidate_relationships.target_candidate_id
+    WHERE source.id = candidate_relationships.source_candidate_id
+      AND source.origin = 'AI' AND target.origin = 'AI'
+  );
+`;
+
 export function migrateDatabase(database: DatabaseSync): void {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
@@ -581,6 +616,17 @@ export function migrateDatabase(database: DatabaseSync): void {
     try {
       database.exec(MIGRATION_10);
       database.exec('PRAGMA user_version = 10;');
+      database.exec('COMMIT;');
+    } catch (error) {
+      database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+  if (version.user_version < 11) {
+    database.exec('BEGIN IMMEDIATE;');
+    try {
+      database.exec(MIGRATION_11);
+      database.exec('PRAGMA user_version = 11;');
       database.exec('COMMIT;');
     } catch (error) {
       database.exec('ROLLBACK;');

@@ -208,6 +208,8 @@ M3.1 起，每次选择都会把一行 response 作为草稿 upsert，因此 `IN
 
 候选关系只允许连接同一图谱内两个 `PENDING` 候选概念，方向固定为 `PREREQUISITE`。记录同样具有 `PENDING / ACCEPTED / IGNORED` 状态和可选 `accepted_edge_id`。忽略概念时，与其相连的待审核关系一并忽略；循环关系在创建和最终写入时都会被拒绝。
 
+M7C 起，关系额外保存 `reason`、`origin / source_model`，以及独立的资料 ID、资料标题/文件名快照、章节位置、字符区间、定位文本和 `evidence_quote`。AI 关系必须同时具有非空原因和本地重建的原文快照；手工关系允许没有 AI 依据。升级前已经存在的 AI 关系会保留，但缺少这些字段时形成写入阻断，防止旧建议被误认为经过新规则核对。
+
 最终确认在 `BEGIN IMMEDIATE` 事务中创建正式节点与关系、更新候选状态和图谱更新时间。写入前重新检查正式图谱重名、候选重名、悬空关系、循环及数量上限。候选记录不是学习 Evidence，不影响 learner state。
 
 ## M7B AI 生成审计实体

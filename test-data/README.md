@@ -18,4 +18,4 @@ npm.cmd run smoke:documents -- --review-private-books
 node scripts/review-real-deepseek.mjs
 ```
 
-该命令使用正式用户资料库，创建或复用“真实验收：AI Infra Transformer”图谱，并只生成待审核候选，不会自动写入正式图谱。运行前必须再次确认发送范围。生成摘要写入已忽略的 `private/beginner-review/real-deepseek-session.json`；其中可能包含受版权保护的短引用，不得提交 Git。
+该命令使用正式用户资料库，创建或复用“真实验收：AI Infra Transformer M7C v2”图谱，并只生成待审核候选，不会自动写入正式图谱。运行前必须再次确认发送范围。生成摘要写入已忽略的 `private/beginner-review/real-deepseek-m7c-v2-session.json`；其中可能包含受版权保护的短引用，不得提交 Git。

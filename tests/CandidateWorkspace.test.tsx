@@ -51,7 +51,15 @@ function installApi(initialWorkspace: CandidateWorkspaceView = workspace): OpenL
       id: '55555555-5555-4555-8555-555555555555', graphId: graph.id,
       sourceCandidateId: workspace.concepts[0].id,
       targetCandidateId: workspace.concepts[1].id,
-      relationship: 'PREREQUISITE', status: 'PENDING', acceptedEdgeId: null,
+      relationship: 'PREREQUISITE',
+      reason: '理解线性回归的误差后，才能看懂梯度下降在优化什么。',
+      origin: 'AI', sourceModel: 'deepseek-flash',
+      evidenceDocumentId: '44444444-4444-4444-8444-444444444444',
+      evidenceDocumentTitle: '课程资料', evidenceDocumentSourceName: 'course.md',
+      evidenceSectionPosition: 1, evidenceSourceLocator: '第 5–8 行',
+      evidenceStartOffset: 0, evidenceEndOffset: 12,
+      evidenceQuote: '梯度下降可以优化损失函数。',
+      status: 'PENDING', acceptedEdgeId: null,
       createdAt: '2026-01-01T00:02:00.000Z',
     }],
   };
@@ -91,7 +99,7 @@ describe('CandidateWorkspace', () => {
       onMessage={vi.fn()}
     />);
     expect(await screen.findByText('建议学习的内容')).toBeVisible();
-    expect(screen.getByText('出处与结构检查已完成。你可以直接整体确认，也可以逐项核对。')).toBeVisible();
+    expect(screen.getByText(/原文与结构检查已完成/)).toBeVisible();
     fireEvent.click(screen.getAllByRole('button', { name: '修改' })[0]);
     const nameInputs = screen.getAllByLabelText('学习内容名称');
     fireEvent.change(nameInputs[0], { target: { value: '一元线性回归' } });
@@ -106,6 +114,9 @@ describe('CandidateWorkspace', () => {
       targetCandidateId: workspace.concepts[1].id,
     }));
     expect(await screen.findByRole('button', { name: '移除此顺序' })).toBeVisible();
+    expect(screen.getByText('理解线性回归的误差后，才能看懂梯度下降在优化什么。')).toBeVisible();
+    fireEvent.click(screen.getByText(/核对关系依据/));
+    expect(screen.getByText('梯度下降可以优化损失函数。')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '加入“机器学习”' }));
     expect(screen.getByRole('alertdialog', { name: '将这条学习路线加入“机器学习”？' })).toBeVisible();
     expect(screen.getByText(/已有的 0 个概念和 0 条关系不会被覆盖/)).toBeVisible();
@@ -162,7 +173,14 @@ describe('CandidateWorkspace', () => {
         id: '55555555-5555-4555-8555-555555555555', graphId: graph.id,
         sourceCandidateId: workspace.concepts[0].id,
         targetCandidateId: workspace.concepts[1].id,
-        relationship: 'PREREQUISITE', status: 'ACCEPTED',
+        relationship: 'PREREQUISITE',
+        reason: '理解线性回归的误差后，才能看懂梯度下降在优化什么。',
+        origin: 'AI', sourceModel: 'deepseek-flash',
+        evidenceDocumentId: null, evidenceDocumentTitle: '课程资料', evidenceDocumentSourceName: 'course.md',
+        evidenceSectionPosition: 1, evidenceSourceLocator: '第 5–8 行',
+        evidenceStartOffset: 0, evidenceEndOffset: 12,
+        evidenceQuote: '梯度下降可以优化损失函数。',
+        status: 'ACCEPTED',
         acceptedEdgeId: '77777777-7777-4777-8777-777777777777',
         createdAt: '2026-01-01T00:02:00.000Z',
       }],

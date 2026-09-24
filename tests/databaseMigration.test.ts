@@ -45,7 +45,7 @@ describe('database migrations', () => {
       upgraded = openDatabase(filePath);
       const version = upgraded.prepare('PRAGMA user_version').get() as { user_version: number };
       const restored = new GraphRepository(upgraded).load(graphId);
-      expect(version.user_version).toBe(10);
+      expect(version.user_version).toBe(11);
       expect(upgraded.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'onboarding_state'",
       ).get()).toBeTruthy();
@@ -69,6 +69,8 @@ describe('database migrations', () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ai_generation_runs'",
       ).get()).toBeTruthy();
       expect(upgraded.prepare("SELECT name FROM pragma_table_info('candidate_concepts') WHERE name = 'origin'").get()).toBeTruthy();
+      expect(upgraded.prepare("SELECT name FROM pragma_table_info('candidate_relationships') WHERE name = 'reason'").get()).toBeTruthy();
+      expect(upgraded.prepare("SELECT name FROM pragma_table_info('candidate_relationships') WHERE name = 'evidence_quote'").get()).toBeTruthy();
       expect(restored?.nodes[0]).toMatchObject({ name: '旧版概念', status: 'AVAILABLE', evidenceCount: 0 });
     } finally {
       upgraded?.close();
@@ -151,7 +153,7 @@ describe('database migrations', () => {
         `SELECT kind, rating, note, score_earned, score_possible, assessment_attempt_id, learning_session_id, practice_attempt_id
          FROM learning_evidence WHERE id = ?`,
       ).get(evidenceId);
-      expect(version.user_version).toBe(10);
+      expect(version.user_version).toBe(11);
       expect(restored?.nodes[0]).toMatchObject({ status: 'MASTERED', evidenceCount: 1, diagnosticQuestionCount: 0 });
       expect(evidence).toMatchObject({
         kind: 'SELF_ASSESSMENT',

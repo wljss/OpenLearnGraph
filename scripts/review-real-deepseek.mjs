@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const executable = resolve('out/OpenLearnGraph-win32-x64/OpenLearnGraph.exe');
 const sourcePath = resolve('test-data/private/books/AI-Infra-Book.pdf');
-const graphName = '真实验收：AI Infra Transformer';
+const graphName = '真实验收：AI Infra Transformer M7C v2';
 const sectionPositions = [32, 33, 34, 35];
 const timeoutMs = 30_000;
 
@@ -149,6 +149,62 @@ function apiCall(app, namespace, expression) {
   return app.renderer.evaluate(`window.openLearnGraph.${namespace}.${expression}`);
 }
 
+async function waitForUi(app, expression, waitMs = timeoutMs) {
+  const until = Date.now() + waitMs;
+  while (Date.now() < until) {
+    if (await app.renderer.evaluate(expression)) return;
+    await delay(100);
+  }
+  throw new Error(`等待界面状态超时：${expression}`);
+}
+
+async function captureCandidateWorkspace(app, graph) {
+  const expectedWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(graph.id)})`);
+  await waitForUi(app, "Boolean(document.querySelector('.graph-list'))");
+  const graphVisible = await app.renderer.evaluate(`Array.from(document.querySelectorAll('.graph-list-name')).some((item) => item.textContent === ${JSON.stringify(graph.name)})`);
+  if (!graphVisible) {
+    await app.renderer.send('Page.reload', { ignoreCache: true });
+    await waitForUi(app, "Boolean(window.openLearnGraph?.candidates && document.querySelector('.graph-list'))");
+  }
+  await app.renderer.evaluate(`(() => {
+    const item = Array.from(document.querySelectorAll('.graph-list button'))
+      .find((button) => button.querySelector('.graph-list-name')?.textContent === ${JSON.stringify(graph.name)});
+    if (!item) throw new Error('找不到 M7C 验收图谱');
+    item.click();
+    return true;
+  })()`);
+  await waitForUi(app, `document.querySelector('[aria-label="图谱名称"]')?.value === ${JSON.stringify(graph.name)}`);
+  await app.renderer.evaluate("document.querySelector('.document-library-launch').click(); true");
+  await waitForUi(app, "Boolean(document.querySelector('.document-library'))");
+  await app.renderer.evaluate("Array.from(document.querySelectorAll('.document-header-actions button')).find((button) => button.textContent === '学习路线预览').click(); true");
+  await waitForUi(app, "Boolean(document.querySelector('.candidate-workspace'))");
+  const review = await app.renderer.evaluate(`(() => ({
+    concepts: document.querySelectorAll('.candidate-card.candidate-pending').length,
+    relationships: document.querySelectorAll('.candidate-relations-section > .candidate-relation-list > li').length,
+    explanations: Array.from(document.querySelectorAll('.candidate-relation-explanation p')).map((item) => item.textContent.trim()),
+    evidenceCount: document.querySelectorAll('.candidate-relation-evidence').length,
+    warningCount: document.querySelectorAll('.candidate-relation-warning').length,
+    blockingText: document.querySelector('.candidate-issues')?.textContent?.trim() ?? '',
+    applyDisabled: document.querySelector('.candidate-workspace > footer .primary-button')?.disabled ?? true,
+  }))()`);
+  assert.equal(review.concepts, expectedWorkspace.pendingConceptCount);
+  assert.equal(review.relationships, expectedWorkspace.pendingRelationshipCount);
+  assert.equal(review.explanations.filter(Boolean).length, expectedWorkspace.pendingRelationshipCount);
+  assert.equal(review.evidenceCount, expectedWorkspace.pendingRelationshipCount);
+  assert.equal(review.warningCount, 0);
+  assert.equal(review.blockingText, '');
+  assert.equal(review.applyDisabled, false);
+  const screenshot = await app.renderer.send('Page.captureScreenshot', { format: 'png' });
+  const screenshotPath = resolve('test-data/private/beginner-review/real-deepseek-m7c-v2-review.png');
+  await writeFile(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+  await app.renderer.evaluate("document.querySelector('.candidate-relations-section').scrollIntoView({ block: 'start' }); true");
+  await delay(300);
+  const relationshipScreenshot = await app.renderer.send('Page.captureScreenshot', { format: 'png' });
+  const relationshipScreenshotPath = resolve('test-data/private/beginner-review/real-deepseek-m7c-v2-relations.png');
+  await writeFile(relationshipScreenshotPath, Buffer.from(relationshipScreenshot.data, 'base64'));
+  console.log(`界面验收通过：${review.concepts} 个概念、${review.relationships} 条带原因和依据的关系；截图：${screenshotPath}；${relationshipScreenshotPath}`);
+}
+
 async function selectFile(app, path) {
   await app.main.evaluate(`process.mainModule.require('electron').dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(path)}] }); true`);
 }
@@ -192,6 +248,11 @@ async function main() {
   let app;
   try {
     app = await launch();
+    if (globalThis.process.argv.includes('--ui-only')) {
+      const graph = await ensureGraph(app);
+      await captureCandidateWorkspace(app, graph);
+      return;
+    }
     const settings = await apiCall(app, 'ai', 'getSettings()');
     assert(settings.secureStorageAvailable, '当前 Windows 环境无法安全解密 DeepSeek Key');
     assert(settings.configured, '请先在正式应用的 AI 设置中保存 DeepSeek API Key');
@@ -256,17 +317,23 @@ async function main() {
       relationships: result.workspace.relationships.map((relationship) => ({
         source: names.get(relationship.sourceCandidateId) ?? relationship.sourceCandidateId,
         target: names.get(relationship.targetCandidateId) ?? relationship.targetCandidateId,
+        reason: relationship.reason,
+        origin: relationship.origin,
+        locator: relationship.evidenceSourceLocator,
+        evidenceQuote: relationship.evidenceQuote,
+        evidenceQuoteLength: Array.from(relationship.evidenceQuote).length,
         status: relationship.status,
       })),
     };
     const reportDirectory = resolve('test-data/private/beginner-review');
     await mkdir(reportDirectory, { recursive: true });
-    const reportPath = join(reportDirectory, 'real-deepseek-session.json');
+    const reportPath = join(reportDirectory, 'real-deepseek-m7c-v2-session.json');
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`生成完成：${result.conceptCount} 个概念，${result.relationshipCount} 条关系，耗时 ${durationMs}ms`);
     console.log(`Token：输入 ${result.promptTokens ?? '未知'}，输出 ${result.completionTokens ?? '未知'}`);
     console.log(`候选保留在图谱“${graph.name}”的审核区，尚未写入正式图谱`);
     console.log(`私有验收记录：${reportPath}`);
+    await captureCandidateWorkspace(app, graph);
   } finally {
     await stop(app);
   }

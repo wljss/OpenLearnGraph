@@ -160,6 +160,31 @@ describe('candidate graph review service', () => {
     database.close();
   });
 
+  it('blocks legacy AI relationships that have no reviewable reason or evidence', async () => {
+    const { database, candidateService, graph, document } = await setup();
+    candidateService.createConcept({
+      graphId: graph.id, documentId: document.id, sectionPosition: 0,
+      sourceStartOffset: 0, sourceEndOffset: 4, name: '线性回归', description: '',
+    });
+    let workspace = candidateService.createConcept({
+      graphId: graph.id, documentId: document.id, sectionPosition: 0,
+      sourceStartOffset: 17, sourceEndOffset: 21, name: '梯度下降', description: '',
+    });
+    const source = workspace.concepts.find((item) => item.name === '线性回归') as typeof workspace.concepts[number];
+    const target = workspace.concepts.find((item) => item.name === '梯度下降') as typeof workspace.concepts[number];
+    workspace = candidateService.createRelationship({
+      graphId: graph.id, sourceCandidateId: source.id, targetCandidateId: target.id,
+    });
+    database.prepare("UPDATE candidate_relationships SET origin = 'AI' WHERE id = ?")
+      .run(workspace.relationships[0].id);
+
+    const legacy = candidateService.getWorkspace(graph.id);
+    expect(legacy.relationships[0]).toMatchObject({ origin: 'AI', reason: '', evidenceQuote: '' });
+    expect(legacy.blockingIssues).toContain('有旧版 AI 学习顺序缺少可核对的原因或原文依据，请移除后重新生成');
+    expect(() => candidateService.apply(graph.id)).toThrow('旧版 AI 学习顺序');
+    database.close();
+  });
+
   it('uses Unicode code-point offsets for source citations', async () => {
     const { database, candidateService, graph, document } = await setup();
     database.prepare(

@@ -68,7 +68,12 @@ function generatedResponse(overrides: Record<string, unknown> = {}): Response {
               evidence: { sourceId: 'e2' },
             },
           ],
-          relationships: [{ sourceKey: 'linear_regression', targetKey: 'gradient_descent' }],
+          relationships: [{
+            sourceKey: 'linear_regression',
+            targetKey: 'gradient_descent',
+            reason: '理解损失函数后，才能看懂梯度下降在优化什么。',
+            evidence: { sourceId: 'e2' },
+          }],
         }),
       },
     }],
@@ -112,6 +117,13 @@ describe('AiService', () => {
       expect.objectContaining({ name: '梯度下降', origin: 'AI', status: 'PENDING' }),
     ]));
     expect(result.workspace.relationships[0]).toMatchObject({ status: 'PENDING', relationship: 'PREREQUISITE' });
+    expect(result.workspace.relationships[0]).toMatchObject({
+      reason: '理解损失函数后，才能看懂梯度下降在优化什么。',
+      origin: 'AI',
+      sourceModel: 'deepseek-flash',
+      evidenceSourceLocator: expect.any(String),
+      evidenceQuote: '梯度下降通过迭代优化损失函数。',
+    });
     expect(candidateRepository.workspace(graph.id).pendingConceptCount).toBe(2);
     expect(database.prepare(
       'SELECT status, model, prompt_tokens, completion_tokens, concept_count, relationship_count FROM ai_generation_runs',
@@ -129,6 +141,8 @@ describe('AiService', () => {
     expect(request.messages[1].content).toContain('线性回归');
     expect(request.messages[1].content).toContain('<EVIDENCE id="e1"');
     expect(request.messages[1].content).toContain('"sourceId":"e1"');
+    expect(request.messages[1].content).toContain('机制通常先于参数量、运算量和性能分析');
+    expect(request.messages[1].content).toContain('用于对比都不等于先修');
     database.close();
   });
 
@@ -137,11 +151,20 @@ describe('AiService', () => {
       choices: [{
         finish_reason: 'stop',
         message: { content: JSON.stringify({
-          concepts: [{
-            key: 'fake', name: '伪造概念', description: '',
-            evidence: { sourceId: 'e9999' },
+          concepts: [
+            {
+              key: 'linear_regression', name: '线性回归', description: '用线性函数拟合数据。',
+              evidence: { sourceId: 'e1' },
+            },
+            {
+              key: 'gradient_descent', name: '梯度下降', description: '迭代优化方法。',
+              evidence: { sourceId: 'e2' },
+            },
+          ],
+          relationships: [{
+            sourceKey: 'linear_regression', targetKey: 'gradient_descent',
+            reason: '理解误差后才能理解优化。', evidence: { sourceId: 'e9999' },
           }],
-          relationships: [],
         }) },
       }],
     };
@@ -149,7 +172,7 @@ describe('AiService', () => {
     const { database, service, graph, document, candidateRepository } = await setup(fetchMock);
     service.saveSettings({ model: 'deepseek-flash', apiKey: 'sk-secret-value' });
     const preview = service.previewCandidateGeneration({ graphId: graph.id, documentId: document.id, sectionPositions: [0] });
-    await expect(service.generateCandidates(preview.previewToken)).rejects.toThrow('出处编号无效');
+    await expect(service.generateCandidates(preview.previewToken)).rejects.toThrow('关系出处编号无效');
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(candidateRepository.workspace(graph.id).concepts).toHaveLength(0);
     expect(database.prepare('SELECT status, prompt_tokens, completion_tokens FROM ai_generation_runs').get()).toMatchObject({
@@ -204,7 +227,8 @@ describe('AiService', () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
       requestIndex += 1;
       const request = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
-      expect(request.messages[1].content).toContain('<EVIDENCE id="e1"');
+    expect(request.messages[1].content).toContain('<EVIDENCE id="e1"');
+    expect(request.messages[1].content).toContain('关系宁缺毋滥');
       return new Response(JSON.stringify({
         choices: [{
           finish_reason: 'stop',
