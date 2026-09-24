@@ -12,6 +12,7 @@ interface CandidateWorkspaceProps {
   onClose: () => void;
   onNavigateSource: (concept: CandidateConceptView) => void;
   onGraphUpdated: (graph: KnowledgeGraphDocument) => void;
+  onStartLearning: (nodeId: string) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
 
@@ -145,7 +146,7 @@ function ConceptCard({ concept, busy, onWorkspace, onNavigateSource, onMessage }
 }
 
 export function CandidateWorkspace({
-  graph, onClose, onNavigateSource, onGraphUpdated, onMessage,
+  graph, onClose, onNavigateSource, onGraphUpdated, onStartLearning, onMessage,
 }: CandidateWorkspaceProps): React.JSX.Element {
   const [workspace, setWorkspace] = useState<CandidateWorkspaceView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,6 +154,7 @@ export function CandidateWorkspace({
   const [sourceId, setSourceId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [applyConfirmation, setApplyConfirmation] = useState(false);
+  const [appliedGraph, setAppliedGraph] = useState<KnowledgeGraphDocument | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -189,6 +191,10 @@ export function CandidateWorkspace({
   const pendingRelationships = useMemo(
     () => workspace?.relationships.filter((relationship) => relationship.status === 'PENDING') ?? [],
     [workspace],
+  );
+  const firstLearningNode = useMemo(
+    () => (appliedGraph ?? graph).nodes.find((node) => node.status !== 'LOCKED' && node.status !== 'MASTERED' && node.description.trim()),
+    [appliedGraph, graph],
   );
   const conceptById = useMemo(
     () => new Map(workspace?.concepts.map((concept) => [concept.id, concept]) ?? []),
@@ -242,6 +248,7 @@ export function CandidateWorkspace({
     setBusy(true);
     try {
       const result = await window.openLearnGraph.candidates.apply(graph.id);
+      setAppliedGraph(result.graph);
       onGraphUpdated(result.graph);
       setWorkspace(await window.openLearnGraph.candidates.getWorkspace(graph.id));
       onMessage(`学习路线已加入“${graph.name}”：新增 ${result.acceptedConceptCount} 个学习内容和 ${result.acceptedRelationshipCount} 条学习顺序。`, 'success');
@@ -304,7 +311,9 @@ export function CandidateWorkspace({
                 {pending.length ? <div className="candidate-card-list">{pending.map((concept) => (
                   <ConceptCard key={`${concept.id}:${concept.updatedAt}:${concept.status}:${concept.reviewedAt ?? ''}`} concept={concept} busy={busy} onWorkspace={setWorkspace} onNavigateSource={onNavigateSource} onMessage={onMessage} />
                 ))}</div> : accepted.length ? (
-                  <div className="candidate-success-state"><span aria-hidden="true">✓</span><strong>这批学习路线已经加入图谱</strong><p>可以返回图谱，从当前可学习的概念或“下一步建议”开始。</p></div>
+                  <div className="candidate-success-state"><span aria-hidden="true">✓</span><strong>这批学习路线已经加入图谱</strong><p>{firstLearningNode
+                    ? `路线已经就绪，可以从“${firstLearningNode.name}”开始第一次学习。`
+                    : '可以返回图谱，先为一个已解锁概念补充学习内容。'}</p></div>
                 ) : ignored.length ? (
                   <div className="candidate-empty">所有建议都已排除。你可以在下方审核记录中重新加入，或返回资料重新生成。</div>
                 ) : <div className="candidate-empty">还没有学习路线建议。请从资料正文选中文字，或使用“AI 生成学习路线”。</div>}
@@ -385,7 +394,14 @@ export function CandidateWorkspace({
                 : '没有待加入内容；审核记录已保留'
               : '学习路线尚未加载'}</span>
             {workspace && !pending.length ? (
-              <button className="primary-button" type="button" disabled={busy} onClick={onClose}>完成，返回图谱</button>
+              <div className="candidate-completion-actions">
+                <button type="button" disabled={busy} onClick={onClose}>查看图谱</button>
+                {firstLearningNode && (
+                  <button className="primary-button" type="button" disabled={busy} onClick={() => onStartLearning(firstLearningNode.id)}>
+                    开始学习“{firstLearningNode.name}”
+                  </button>
+                )}
+              </div>
             ) : (
               <button
                 className="primary-button"

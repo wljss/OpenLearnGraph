@@ -13,6 +13,9 @@ export function registerAiIpc(service: AiService): void {
   ipcMain.handle(IPC_CHANNELS.aiCandidateGenerate, (
     _event, previewToken: unknown,
   ) => service.generateCandidates(previewToken));
+  ipcMain.handle(IPC_CHANNELS.aiCandidateProgress, (
+    _event, previewToken: unknown,
+  ) => service.getCandidateGenerationProgress(previewToken));
   ipcMain.handle(IPC_CHANNELS.aiCandidateCancel, (
     _event, previewToken: unknown,
   ) => service.cancelCandidateGeneration(previewToken));

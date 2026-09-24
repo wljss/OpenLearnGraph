@@ -19,6 +19,7 @@ describe('AiSettingsDialog', () => {
       testConnection: vi.fn().mockResolvedValue({ ok: true, model: 'deepseek-flash', latencyMs: 128 }),
       previewCandidateGeneration: vi.fn(),
       generateCandidates: vi.fn(),
+      getCandidateGenerationProgress: vi.fn(),
       cancelCandidateGeneration: vi.fn(),
     };
     window.openLearnGraph = { ai } as unknown as OpenLearnGraphApi;

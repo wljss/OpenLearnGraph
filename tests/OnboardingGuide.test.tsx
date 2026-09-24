@@ -27,6 +27,8 @@ function renderGuide(welcome: boolean, overrides: Partial<React.ComponentProps<t
     onChooseImport: vi.fn(),
     onChooseSample: vi.fn(),
     onDismiss: vi.fn(),
+    onReplayWelcome: vi.fn(),
+    onReturnToChecklist: vi.fn(),
     onFinish: vi.fn(),
     onTaskAction: vi.fn(),
     onDeleteSample: vi.fn(),
@@ -38,7 +40,7 @@ function renderGuide(welcome: boolean, overrides: Partial<React.ComponentProps<t
 
 describe('OnboardingGuide', () => {
   it('offers three clear first-run paths without requesting an AI key', () => {
-    const props = renderGuide(true);
+    const props = renderGuide(true, { state: { ...state, status: 'NOT_STARTED' } });
     expect(screen.getByRole('heading', { name: '把资料变成一条真正可学习的路线' })).toBeVisible();
     expect(screen.getByRole('button', { name: /导入本地资料/ })).toBeVisible();
     expect(screen.getByRole('button', { name: /手工建立图谱/ })).toBeVisible();
@@ -63,5 +65,29 @@ describe('OnboardingGuide', () => {
     renderGuide(false, { state: { ...state, sampleGraphId: crypto.randomUUID() }, onDeleteSample });
     fireEvent.click(screen.getByRole('button', { name: '删除示例图谱' }));
     expect(onDeleteSample).toHaveBeenCalledOnce();
+  });
+
+  it('replays the quick introduction without offering to dismiss an existing guide', () => {
+    const onReplayWelcome = vi.fn();
+    const checklist = renderGuide(false, { onReplayWelcome });
+    fireEvent.click(screen.getByRole('button', { name: '重新查看快速介绍' }));
+    expect(checklist.onReplayWelcome).toHaveBeenCalledOnce();
+
+    const onReturnToChecklist = vi.fn();
+    renderGuide(true, { onReturnToChecklist });
+    expect(screen.getByText(/不会重置任务、图谱、学习记录或掌握进度/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: '暂不引导' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务指南' }));
+    expect(onReturnToChecklist).toHaveBeenCalledOnce();
+  });
+
+  it('opens the existing sample instead of suggesting a duplicate', () => {
+    const onChooseSample = vi.fn();
+    renderGuide(false, {
+      state: { ...state, sampleGraphId: crypto.randomUUID() },
+      onChooseSample,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '打开示例图谱' }));
+    expect(onChooseSample).toHaveBeenCalledOnce();
   });
 });

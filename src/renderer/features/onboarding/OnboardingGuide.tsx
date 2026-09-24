@@ -11,6 +11,8 @@ interface OnboardingGuideProps {
   onChooseImport: () => void;
   onChooseSample: () => void;
   onDismiss: () => void;
+  onReplayWelcome: () => void;
+  onReturnToChecklist: () => void;
   onFinish: () => void;
   onTaskAction: (task: OnboardingTaskKey) => void;
   onDeleteSample: () => void;
@@ -43,6 +45,8 @@ export function OnboardingGuide({
   onChooseImport,
   onChooseSample,
   onDismiss,
+  onReplayWelcome,
+  onReturnToChecklist,
   onFinish,
   onTaskAction,
   onDeleteSample,
@@ -50,6 +54,7 @@ export function OnboardingGuide({
   const completedCount = onboardingCompletedCount(state.checklist);
   const nextTask = TASKS.find((task) => !state.checklist[task.key]) ?? null;
   const percent = Math.round((completedCount / TASKS.length) * 100);
+  const replayingWelcome = welcome && state.status !== 'NOT_STARTED';
 
   return (
     <div className="onboarding-backdrop" role="presentation">
@@ -64,7 +69,7 @@ export function OnboardingGuide({
             <header className="onboarding-welcome-header">
               <span className="onboarding-logo" aria-hidden="true">OL</span>
               <div>
-                <small>欢迎使用 OpenLearnGraph</small>
+                <small>{replayingWelcome ? 'OpenLearnGraph 快速介绍' : '欢迎使用 OpenLearnGraph'}</small>
                 <h2 id="onboarding-title">把资料变成一条真正可学习的路线</h2>
                 <p>知识结构、学习记录和正文默认留在这台设备上。AI 只会在你明确选择范围并确认后使用。</p>
               </div>
@@ -84,14 +89,20 @@ export function OnboardingGuide({
               </button>
               <button type="button" disabled={busy} onClick={onChooseSample}>
                 <span aria-hidden="true">◎</span>
-                <strong>体验完整示例</strong>
-                <p>创建一个带内容、关系和题目的机器学习示例，可随时删除。</p>
-                <em>最快理解完整学习闭环</em>
+                <strong>{state.sampleGraphId ? '打开示例图谱' : replayingWelcome ? '再次体验示例' : '体验完整示例'}</strong>
+                <p>{state.sampleGraphId
+                  ? '继续使用已有机器学习示例，不会重复创建或清空其中的学习记录。'
+                  : '创建一个带内容、关系和题目的机器学习示例，可随时删除。'}</p>
+                <em>{state.sampleGraphId ? '从上次的位置继续' : '最快理解完整学习闭环'}</em>
               </button>
             </div>
             <footer className="onboarding-welcome-footer">
-              <span>不会要求你现在配置 DeepSeek，也不会上传任何文件。</span>
-              <button type="button" disabled={busy} onClick={onDismiss}>暂不引导</button>
+              <span>{replayingWelcome
+                ? '重看介绍不会重置任务、图谱、学习记录或掌握进度。'
+                : '不会要求你现在配置 DeepSeek，也不会上传任何文件。'}</span>
+              <button type="button" disabled={busy} onClick={replayingWelcome ? onReturnToChecklist : onDismiss}>
+                {replayingWelcome ? '返回任务指南' : '暂不引导'}
+              </button>
             </footer>
           </>
         ) : (
@@ -126,7 +137,7 @@ export function OnboardingGuide({
                 })}
               </ol>
               <aside className="onboarding-guide-context">
-                <span>理解进度</span>
+                <span>功能体验进度</span>
                 <h3>{nextTask ? `下一步：${nextTask.title}` : '你已经走通完整流程'}</h3>
                 <p>{nextTask
                   ? nextTask.description
@@ -136,9 +147,15 @@ export function OnboardingGuide({
                   <div><dt>练习</dt><dd>提供即时反馈，不替代客观诊断</dd></div>
                   <div><dt>诊断</dt><dd>达到阈值后形成客观掌握结论</dd></div>
                 </dl>
-                {state.sampleGraphId && (
-                  <button className="onboarding-delete-sample" type="button" disabled={busy} onClick={onDeleteSample}>删除示例图谱</button>
-                )}
+                <div className="onboarding-context-actions">
+                  <button type="button" disabled={busy} onClick={onReplayWelcome}>重新查看快速介绍</button>
+                  <button type="button" disabled={busy} onClick={onChooseSample}>
+                    {state.sampleGraphId ? '打开示例图谱' : '再次体验示例'}
+                  </button>
+                  {state.sampleGraphId && (
+                    <button className="onboarding-delete-sample" type="button" disabled={busy} onClick={onDeleteSample}>删除示例图谱</button>
+                  )}
+                </div>
               </aside>
             </div>
             <footer className="onboarding-guide-footer">

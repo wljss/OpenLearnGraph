@@ -131,7 +131,8 @@ function installApi(overrides: Partial<OpenLearnGraphApi['graphs']> = {}): OpenL
     },
     ai: {
       getSettings: vi.fn(), saveSettings: vi.fn(), clearApiKey: vi.fn(), testConnection: vi.fn(),
-      previewCandidateGeneration: vi.fn(), generateCandidates: vi.fn(), cancelCandidateGeneration: vi.fn(),
+      previewCandidateGeneration: vi.fn(), generateCandidates: vi.fn(),
+      getCandidateGenerationProgress: vi.fn(), cancelCandidateGeneration: vi.fn(),
     },
     onboarding: {
       getState: vi.fn().mockResolvedValue({
@@ -179,6 +180,19 @@ describe('renderer user flows', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: '把资料变成一条真正可学习的路线' })).not.toBeInTheDocument());
     expect(screen.getByLabelText('新图谱名称')).toHaveFocus();
     expect(screen.getByRole('button', { name: /上手指南/ })).toHaveTextContent('0 / 6');
+  });
+
+  it('replays the quick introduction without resetting an existing guide status', async () => {
+    const api = installApi();
+    render(<App />);
+    const launch = await screen.findByRole('button', { name: /上手指南/ });
+    fireEvent.click(launch);
+    expect(await screen.findByRole('heading', { name: '完成一次真实学习闭环' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '重新查看快速介绍' }));
+    expect(await screen.findByRole('heading', { name: '把资料变成一条真正可学习的路线' })).toBeVisible();
+    expect(screen.getByText(/不会重置任务、图谱、学习记录或掌握进度/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /手工建立图谱/ }));
+    expect(api.onboarding.updateStatus).not.toHaveBeenCalled();
   });
 
   it('loads the shell and explains how to create the first graph', async () => {

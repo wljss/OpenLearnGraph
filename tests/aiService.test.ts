@@ -304,6 +304,9 @@ describe('AiService', () => {
       graphId: second.graph.id, documentId: second.document.id, sectionPositions: [0],
     });
     const generating = second.service.generateCandidates(preview.previewToken);
+    expect(second.service.getCandidateGenerationProgress(preview.previewToken)).toMatchObject({
+      phase: 'GENERATING', completedBatchCount: 0, totalBatchCount: 1, currentBatchNumber: 1,
+    });
     second.service.cancelCandidateGeneration(preview.previewToken);
     await expect(generating).rejects.toThrow('已取消');
     expect(second.database.prepare('SELECT status FROM ai_generation_runs').get()).toMatchObject({ status: 'CANCELLED' });

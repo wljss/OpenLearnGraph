@@ -98,7 +98,8 @@ function installTutorApi(): OpenLearnGraphApi {
     },
     ai: {
       getSettings: vi.fn(), saveSettings: vi.fn(), clearApiKey: vi.fn(), testConnection: vi.fn(),
-      previewCandidateGeneration: vi.fn(), generateCandidates: vi.fn(), cancelCandidateGeneration: vi.fn(),
+      previewCandidateGeneration: vi.fn(), generateCandidates: vi.fn(),
+      getCandidateGenerationProgress: vi.fn(), cancelCandidateGeneration: vi.fn(),
     },
     onboarding: {
       getState: vi.fn(), updateStatus: vi.fn(), createSample: vi.fn(), deleteSample: vi.fn(),

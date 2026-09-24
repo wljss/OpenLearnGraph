@@ -683,6 +683,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .ai-privacy-note p { margin: 5px 0 0; color: #5e7480; font-size: 11px; line-height: 1.65; }
 .ai-settings-state, .ai-inline-status { margin: 0; color: #5e746c; font-size: 11px; }
 .ai-inline-status { padding: 10px 12px; color: #2e6757; border-radius: 7px; background: #edf6f2; }
+.ai-generation-progress { display: grid; gap: 8px; padding: 12px 14px; color: #315e51; border: 1px solid #c8ded6; border-radius: 9px; background: #f0f8f5; }
+.ai-generation-progress > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-generation-progress strong { font-size: 11px; }
+.ai-generation-progress span { color: #5f7f75; font-size: 9px; white-space: nowrap; }
+.ai-generation-progress > div[role="progressbar"] { height: 7px; overflow: hidden; border-radius: 999px; background: #dceae5; }
+.ai-generation-progress > div[role="progressbar"] > span { display: block; height: 100%; border-radius: inherit; background: #438a72; transition: width .2s ease; }
+.ai-generation-progress p { margin: 0; color: #688078; font-size: 9px; line-height: 1.55; }
+.ai-generation-error { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 12px; padding: 12px 14px; color: #8a3e3a; border: 1px solid #edc3c0; border-radius: 9px; background: #fff7f6; }
+.ai-generation-error strong, .ai-generation-error p, .ai-generation-error small { grid-column: 1; }
+.ai-generation-error strong { font-size: 11px; }
+.ai-generation-error p { margin: 0; font-size: 10px; line-height: 1.5; }
+.ai-generation-error small { color: #8f6965; font-size: 9px; line-height: 1.5; }
+.ai-generation-error button { grid-column: 2; grid-row: 1 / span 3; align-self: center; padding: 7px 9px; color: #7d423f; border: 1px solid #dfb1ad; border-radius: 6px; background: #fff; font-size: 9px; font-weight: 750; }
 .ai-settings-dialog > footer, .ai-generation-dialog > footer, .ai-scope-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-top: 1px solid #e0e8e5; background: #fafcfb; }
 .ai-settings-dialog > footer > div { display: flex; gap: 8px; }
 .ai-upload-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -715,6 +728,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .ai-range-current { color: #7b8984; }
 .candidate-workspace > footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 24px; border-top: 1px solid #dbe5e1; background: #fff; }
 .candidate-workspace > footer > span { color: #71817c; font-size: 11px; }
+.candidate-completion-actions { display: flex; align-items: center; gap: 8px; }
 .onboarding-backdrop { position: fixed; z-index: 140; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(14,35,29,.62); backdrop-filter: blur(3px); }
 .onboarding-dialog { width: min(920px,100%); max-height: calc(100vh - 48px); overflow: hidden; color: #31483f; border: 1px solid #c8d8d3; border-radius: 16px; background: #fff; box-shadow: 0 28px 100px rgba(7,25,19,.38); }
 .onboarding-welcome-header { display: flex; align-items: flex-start; gap: 17px; padding: 28px 30px 20px; background: linear-gradient(135deg,#edf8f4,#fff 68%); }
@@ -761,7 +775,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .onboarding-guide-context dl > div { padding: 9px 10px; border: 1px solid #dde7e3; border-radius: 8px; background: #fff; }
 .onboarding-guide-context dt { color: #376c5d; font-size: 9px; font-weight: 800; }
 .onboarding-guide-context dd { margin: 3px 0 0; color: #76847f; font-size: 9px; line-height: 1.45; }
-.onboarding-delete-sample { margin-top: 8px; padding: 7px 9px; color: #a14a47; border: 1px solid #e2c0bd; border-radius: 6px; background: #fff8f7; font-size: 9px; font-weight: 700; }
+.onboarding-context-actions { display: grid; gap: 7px; margin-top: 16px; }
+.onboarding-context-actions > button { padding: 8px 10px; color: #356c5d; border: 1px solid #c6d9d3; border-radius: 7px; background: #fff; font-size: 9px; font-weight: 750; text-align: left; }
+.onboarding-context-actions > button:hover:not(:disabled) { border-color: #7eac9e; background: #f4faf7; }
+.onboarding-context-actions > .onboarding-delete-sample { color: #a14a47; border-color: #e2c0bd; background: #fff8f7; }
 .onboarding-guide-footer > div { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 900px) { .candidate-route-overview { grid-template-columns: 1fr; } .candidate-card-list { grid-template-columns: 1fr; } .candidate-relation-route { grid-template-columns: auto 1fr auto 1fr; } .candidate-relation-route > button { grid-column: 2 / -1; justify-self: end; } }
 @media (max-width: 1120px) { .sidebar { width: 210px; flex-basis: 210px; } .content-grid { grid-template-columns: minmax(0, 1fr) 300px; } .diagnostic-launch, .session-launch, .practice-launch { font-size: 0; } .diagnostic-launch::after { content: "诊断"; font-size: 13px; } .session-launch::after { content: "学习"; font-size: 13px; } .practice-launch::after { content: "练习"; font-size: 13px; } .tutor-recommendation { padding-inline: 18px; } .tutor-main > p { max-width: 540px; } .graph-progress-overview { grid-template-columns: 1fr; gap: 10px; padding-inline: 18px; } }

@@ -79,6 +79,7 @@ function libraryProps(overrides: Partial<ComponentProps<typeof DocumentLibrary>>
     structureDirty: false,
     onClose: vi.fn(),
     onGraphUpdated: vi.fn(),
+    onStartLearning: vi.fn(),
     onMessage: vi.fn(),
     ...overrides,
   };
@@ -162,6 +163,10 @@ function installApi(overrides: Partial<OpenLearnGraphApi['documents']> = {}): Op
         workspace: emptyWorkspace, provider: 'DEEPSEEK', model: 'deepseek-flash',
         conceptCount: 2, relationshipCount: 1, batchCount: 1, mergeWarnings: [],
         promptTokens: 100, completionTokens: 30,
+      }),
+      getCandidateGenerationProgress: vi.fn().mockResolvedValue({
+        phase: 'GENERATING', completedBatchCount: 0, totalBatchCount: 1,
+        currentBatchNumber: 1, retryingGrounding: false,
       }),
       cancelCandidateGeneration: vi.fn().mockResolvedValue(undefined),
     },

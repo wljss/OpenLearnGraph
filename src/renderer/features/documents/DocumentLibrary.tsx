@@ -24,6 +24,7 @@ interface DocumentLibraryProps {
   structureDirty: boolean;
   onClose: () => void;
   onGraphUpdated: (graph: KnowledgeGraphDocument) => void;
+  onStartLearning: (nodeId: string) => void;
   onMessage: (message: string, tone?: 'info' | 'success' | 'error') => void;
 }
 
@@ -445,7 +446,7 @@ function ImportedDocumentReader({
 }
 
 export function DocumentLibrary({
-  activeGraph, structureDirty, onClose, onGraphUpdated, onMessage,
+  activeGraph, structureDirty, onClose, onGraphUpdated, onStartLearning, onMessage,
 }: DocumentLibraryProps): React.JSX.Element {
   const [documents, setDocuments] = useState<ImportedDocumentSummaryView[]>([]);
   const [preview, setPreview] = useState<DocumentPreviewView | null>(null);
@@ -870,6 +871,7 @@ export function DocumentLibrary({
           onClose={() => setCandidateWorkspaceGraph(null)}
           onNavigateSource={navigateToCandidateSource}
           onGraphUpdated={onGraphUpdated}
+          onStartLearning={onStartLearning}
           onMessage={onMessage}
         />
       )}

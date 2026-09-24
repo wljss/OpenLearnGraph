@@ -68,6 +68,13 @@ describe('onboarding service', () => {
     expect(database.prepare('SELECT id FROM knowledge_graphs WHERE id = ?').get(otherGraphId)).toBeTruthy();
   });
 
+  it('does not reset a completed guide when recreating a deleted sample', () => {
+    service.updateStatus({ status: 'COMPLETED' });
+    const recreated = service.createSample();
+    expect(recreated.state.status).toBe('COMPLETED');
+    expect(recreated.state.sampleGraphId).toBe(recreated.graph.id);
+  });
+
   it('rejects untrusted status values', () => {
     expect(() => service.updateStatus({ status: 'NOT_STARTED' })).toThrow();
     expect(() => service.updateStatus({ status: 'UNKNOWN' })).toThrow();

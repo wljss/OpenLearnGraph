@@ -98,6 +98,7 @@ const api: OpenLearnGraphApi = {
     testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.aiConnectionTest),
     previewCandidateGeneration: (input: PreviewAiCandidateGenerationInput) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidatePreview, input),
     generateCandidates: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateGenerate, previewToken),
+    getCandidateGenerationProgress: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateProgress, previewToken),
     cancelCandidateGeneration: (previewToken: string) => ipcRenderer.invoke(IPC_CHANNELS.aiCandidateCancel, previewToken),
   },
   onboarding: {

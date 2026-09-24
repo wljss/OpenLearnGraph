@@ -142,7 +142,8 @@ export class OnboardingRepository {
       });
       this.database.prepare(`
         UPDATE onboarding_state
-        SET status = 'IN_PROGRESS', sample_graph_id = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+        SET status = CASE WHEN status = 'NOT_STARTED' THEN 'IN_PROGRESS' ELSE status END,
+            sample_graph_id = ?, started_at = COALESCE(started_at, ?), updated_at = ?
         WHERE id = 1
       `).run(graphId, now, now);
       this.database.exec('COMMIT;');

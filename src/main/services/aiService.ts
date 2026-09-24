@@ -8,6 +8,7 @@ import {
   previewAiCandidateGenerationInputSchema,
   saveAiSettingsInputSchema,
   type AiCandidateGenerationPreviewView,
+  type AiCandidateGenerationProgressView,
   type AiCandidateGenerationResult,
   type AiConnectionTestResult,
   type AiSettingsView,
@@ -261,6 +262,7 @@ function normalizedConceptName(value: string): string {
 export class AiService {
   private readonly previews = new Map<string, GenerationPreview>();
   private readonly activeRequests = new Map<string, AbortController>();
+  private readonly generationProgress = new Map<string, AiCandidateGenerationProgressView>();
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
 
@@ -388,6 +390,14 @@ export class AiService {
     const apiKey = this.decryptApiKey(settings.encryptedApiKey);
     const controller = new AbortController();
     this.activeRequests.set(previewToken, controller);
+    const batches = splitIntoBatches(currentSections);
+    this.generationProgress.set(previewToken, {
+      phase: 'GENERATING',
+      completedBatchCount: 0,
+      totalBatchCount: batches.length,
+      currentBatchNumber: 1,
+      retryingGrounding: false,
+    });
     const runId = this.generationRepository.start({
       graphId: preview.graphId,
       documentId: preview.documentId,
@@ -399,7 +409,6 @@ export class AiService {
     let promptTokens: number | null = 0;
     let completionTokens: number | null = 0;
     try {
-      const batches = splitIntoBatches(currentSections);
       const sectionMap = new Map(currentSections.map((section) => [section.position, section]));
       const verifiedConcepts: VerifiedGeneratedConcept[] = [];
       const generatedRelationships: Array<{
@@ -412,7 +421,21 @@ export class AiService {
       }> = [];
       let groundingRetryCount = 0;
       for (const [batchIndex, batch] of batches.entries()) {
+        this.generationProgress.set(previewToken, {
+          phase: 'GENERATING',
+          completedBatchCount: batchIndex,
+          totalBatchCount: batches.length,
+          currentBatchNumber: batchIndex + 1,
+          retryingGrounding: false,
+        });
         let batchResult = await this.requestGeneratedBatch(batch, preview.model, apiKey, controller);
+        this.generationProgress.set(previewToken, {
+          phase: 'VERIFYING',
+          completedBatchCount: batchIndex,
+          totalBatchCount: batches.length,
+          currentBatchNumber: batchIndex + 1,
+          retryingGrounding: false,
+        });
         promptTokens = addTokenUsage(promptTokens, batchResult.promptTokens);
         completionTokens = addTokenUsage(completionTokens, batchResult.completionTokens);
         let evidenceById = new Map(batchResult.evidence.map((item) => [item.id, item]));
@@ -423,7 +446,21 @@ export class AiService {
         );
         if (hasInvalidEvidence) {
           groundingRetryCount += 1;
+          this.generationProgress.set(previewToken, {
+            phase: 'GENERATING',
+            completedBatchCount: batchIndex,
+            totalBatchCount: batches.length,
+            currentBatchNumber: batchIndex + 1,
+            retryingGrounding: true,
+          });
           batchResult = await this.requestGeneratedBatch(batch, preview.model, apiKey, controller, true);
+          this.generationProgress.set(previewToken, {
+            phase: 'VERIFYING',
+            completedBatchCount: batchIndex,
+            totalBatchCount: batches.length,
+            currentBatchNumber: batchIndex + 1,
+            retryingGrounding: true,
+          });
           promptTokens = addTokenUsage(promptTokens, batchResult.promptTokens);
           completionTokens = addTokenUsage(completionTokens, batchResult.completionTokens);
           evidenceById = new Map(batchResult.evidence.map((item) => [item.id, item]));
@@ -457,7 +494,22 @@ export class AiService {
             sourceEndOffset: sourceEvidence.sourceEndOffset,
           });
         }
+        this.generationProgress.set(previewToken, {
+          phase: 'GENERATING',
+          completedBatchCount: batchIndex + 1,
+          totalBatchCount: batches.length,
+          currentBatchNumber: batchIndex + 1 < batches.length ? batchIndex + 2 : null,
+          retryingGrounding: false,
+        });
       }
+
+      this.generationProgress.set(previewToken, {
+        phase: 'MERGING',
+        completedBatchCount: batches.length,
+        totalBatchCount: batches.length,
+        currentBatchNumber: null,
+        retryingGrounding: false,
+      });
 
       const concepts: Array<Omit<VerifiedGeneratedConcept, 'batchKey'>> = [];
       const canonicalByName = new Map<string, number>();
@@ -542,6 +594,7 @@ export class AiService {
         relationshipCount: relationships.length,
       });
       this.previews.delete(previewToken);
+      this.generationProgress.delete(previewToken);
       return {
         workspace,
         provider: 'DEEPSEEK',
@@ -557,10 +610,22 @@ export class AiService {
       if (controller.signal.aborted) {
         this.previews.delete(previewToken);
         if (error instanceof AiRequestTimeoutError) {
+          this.generationProgress.set(previewToken, {
+            ...(this.generationProgress.get(previewToken) as AiCandidateGenerationProgressView),
+            phase: 'FAILED',
+            currentBatchNumber: null,
+          });
           this.generationRepository.fail(runId, error.message, { promptTokens, completionTokens });
+          this.generationProgress.delete(previewToken);
           throw error;
         }
+        this.generationProgress.set(previewToken, {
+          ...(this.generationProgress.get(previewToken) as AiCandidateGenerationProgressView),
+          phase: 'CANCELLING',
+          currentBatchNumber: null,
+        });
         this.generationRepository.cancel(runId);
+        this.generationProgress.delete(previewToken);
         throw new Error('DeepSeek 候选生成已取消', { cause: error });
       }
       this.generationRepository.fail(
@@ -568,14 +633,42 @@ export class AiService {
         error instanceof Error ? error.message : '未知错误',
         { promptTokens, completionTokens },
       );
+      this.generationProgress.set(previewToken, {
+        ...(this.generationProgress.get(previewToken) ?? {
+          completedBatchCount: 0,
+          totalBatchCount: batches.length,
+          currentBatchNumber: null,
+          retryingGrounding: false,
+        }),
+        phase: 'FAILED',
+        currentBatchNumber: null,
+      });
       throw error;
     } finally {
       this.activeRequests.delete(previewToken);
     }
   }
 
+  getCandidateGenerationProgress(untrustedPreviewToken: unknown): AiCandidateGenerationProgressView {
+    const { previewToken } = parseOrThrow(aiGenerationTokenInputSchema.safeParse({ previewToken: untrustedPreviewToken }));
+    this.removeExpiredPreviews();
+    const active = this.generationProgress.get(previewToken);
+    if (active) return active;
+    const preview = this.previews.get(previewToken);
+    if (!preview) throw new Error('AI 生成预览已失效，请重新确认发送范围');
+    return {
+      phase: 'READY',
+      completedBatchCount: 0,
+      totalBatchCount: splitIntoBatches(preview.sections).length,
+      currentBatchNumber: null,
+      retryingGrounding: false,
+    };
+  }
+
   cancelCandidateGeneration(untrustedPreviewToken: unknown): void {
     const { previewToken } = parseOrThrow(aiGenerationTokenInputSchema.safeParse({ previewToken: untrustedPreviewToken }));
+    const current = this.generationProgress.get(previewToken);
+    if (current) this.generationProgress.set(previewToken, { ...current, phase: 'CANCELLING', currentBatchNumber: null });
     this.activeRequests.get(previewToken)?.abort();
     this.previews.delete(previewToken);
   }
@@ -670,7 +763,10 @@ export class AiService {
   private removeExpiredPreviews(): void {
     const now = this.now();
     for (const [token, preview] of this.previews) {
-      if (preview.expiresAt <= now && !this.activeRequests.has(token)) this.previews.delete(token);
+      if (preview.expiresAt <= now && !this.activeRequests.has(token)) {
+        this.previews.delete(token);
+        this.generationProgress.delete(token);
+      }
     }
   }
 

@@ -96,6 +96,7 @@ describe('CandidateWorkspace', () => {
       onClose={vi.fn()}
       onNavigateSource={vi.fn()}
       onGraphUpdated={onGraphUpdated}
+      onStartLearning={vi.fn()}
       onMessage={vi.fn()}
     />);
     expect(await screen.findByText('建议学习的内容')).toBeVisible();
@@ -133,6 +134,7 @@ describe('CandidateWorkspace', () => {
       onClose={vi.fn()}
       onNavigateSource={onNavigateSource}
       onGraphUpdated={vi.fn()}
+      onStartLearning={vi.fn()}
       onMessage={vi.fn()}
     />);
     fireEvent.click(await screen.findByRole('button', { name: /课程资料 · 第 1–4 行/ }));
@@ -146,6 +148,7 @@ describe('CandidateWorkspace', () => {
       onClose={vi.fn()}
       onNavigateSource={vi.fn()}
       onGraphUpdated={vi.fn()}
+      onStartLearning={vi.fn()}
       onMessage={vi.fn()}
     />);
     fireEvent.click((await screen.findAllByRole('button', { name: '保留' }))[0]);
@@ -189,14 +192,26 @@ describe('CandidateWorkspace', () => {
       blockingIssues: [],
     };
     installApi(accepted);
+    const onStartLearning = vi.fn();
+    const graphWithStart = { ...graph, nodes: [{
+      id: '66666666-6666-4666-8666-666666666666', graphId: graph.id,
+      name: '线性回归', description: '用线性函数拟合数据。', position: { x: 90, y: 90 },
+      status: 'AVAILABLE' as const, learningPhase: 'NOT_STARTED' as const, statusReason: '',
+      evidenceCount: 0, lastEvidenceAt: null, latestEvidenceKind: null,
+      mostRecentEvidenceKind: null, latestEvidenceScoreEarned: null, latestEvidenceScorePossible: null,
+      diagnosticQuestionCount: 0, practiceQuestionCount: 0,
+    }] };
     render(<CandidateWorkspace
-      graph={graph}
+      graph={graphWithStart}
       onClose={vi.fn()}
       onNavigateSource={vi.fn()}
       onGraphUpdated={vi.fn()}
+      onStartLearning={onStartLearning}
       onMessage={vi.fn()}
     />);
     expect(await screen.findByText('这批学习路线已经加入图谱')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '开始学习“线性回归”' }));
+    expect(onStartLearning).toHaveBeenCalledWith('66666666-6666-4666-8666-666666666666');
     fireEvent.click(screen.getByText(/已排除与已写入记录（2 项内容 · 1 条顺序）/));
     expect(screen.getByText('学习顺序记录')).toBeVisible();
     expect(screen.getAllByText(/已加入图谱/)).toHaveLength(3);

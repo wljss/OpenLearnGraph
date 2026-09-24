@@ -89,6 +89,8 @@ DeepSeek HTTP 请求由 main 注入 Electron `net.fetch`，使用 Chromium 网�
 
 每批响应还必须通过运行时 JSON schema、概念/关系唯一性、先修引用和无环检查。全部批次成功后按规范化名称合并同名概念，并丢弃合并后产生的重复、自循环或冲突关系；最后通过一次 repository 调用原子写入候选区。请求支持主动取消和每批 90 秒超时，HTTP/网络错误转换为可执行的中文提示。`ai_generation_runs` 仅审计 provider、模型、完整章节范围、总字符数、汇总 token 数、结果数量、状态和错误，不保存正文、提示词、原始响应或密钥；失败重试所消耗的 token 也计入该次审计。
 
+生成进度由 main 内存中的预览 token 状态驱动，renderer 只能通过经 UUID 校验的只读 `ai:candidate-progress` IPC 轮询；进度包含总批次、已完成批次、当前批次和生成 / 核对 / 合并阶段，不暴露正文、提示词或响应。renderer 使用同步锁和禁用态阻止重复提交。普通网络或 provider 失败不会消费仍有效的预览 token，因此可在同一授权范围内重试；主动取消、超时、原文变化或预览过期会令 token 失效。候选仍只在所有批次成功后一次性写入。
+
 ## Windows 分发（ADR-004）
 
 M1 使用 Forge 的 ZIP maker，并实际验证可生成和运行 Windows x64 包。曾验证 Squirrel maker，但其旧 NuGet 工具在 Electron 44 的 `dxcompiler.dll` 上失败；为了不保留一个已知会失败的发布命令，当前配置不包含 Squirrel。安装器选择、Squirrel 启动事件、图标、代码签名和 SmartScreen 信誉作为 M10 的完整发布工作一起处理。

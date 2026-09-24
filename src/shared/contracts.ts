@@ -724,6 +724,13 @@ export interface AiCandidateGenerationResult {
   promptTokens: number | null;
   completionTokens: number | null;
 }
+export interface AiCandidateGenerationProgressView {
+  phase: 'READY' | 'GENERATING' | 'VERIFYING' | 'MERGING' | 'CANCELLING' | 'FAILED';
+  completedBatchCount: number;
+  totalBatchCount: number;
+  currentBatchNumber: number | null;
+  retryingGrounding: boolean;
+}
 export interface TutorDecisionView {
   id: string;
   graphId: string;
@@ -813,6 +820,7 @@ export interface OpenLearnGraphApi {
     testConnection(): Promise<AiConnectionTestResult>;
     previewCandidateGeneration(input: PreviewAiCandidateGenerationInput): Promise<AiCandidateGenerationPreviewView>;
     generateCandidates(previewToken: string): Promise<AiCandidateGenerationResult>;
+    getCandidateGenerationProgress(previewToken: string): Promise<AiCandidateGenerationProgressView>;
     cancelCandidateGeneration(previewToken: string): Promise<void>;
   };
   onboarding: {
@@ -854,7 +862,8 @@ export const IPC_CHANNELS = {
   candidateRelationshipDelete: 'candidate:relationship-delete', candidateWorkspaceApply: 'candidate:workspace-apply',
   aiSettingsGet: 'ai:settings-get', aiSettingsSave: 'ai:settings-save', aiApiKeyClear: 'ai:api-key-clear',
   aiConnectionTest: 'ai:connection-test', aiCandidatePreview: 'ai:candidate-preview',
-  aiCandidateGenerate: 'ai:candidate-generate', aiCandidateCancel: 'ai:candidate-cancel',
+  aiCandidateGenerate: 'ai:candidate-generate', aiCandidateProgress: 'ai:candidate-progress',
+  aiCandidateCancel: 'ai:candidate-cancel',
   onboardingStateGet: 'onboarding:state-get', onboardingStatusUpdate: 'onboarding:status-update',
   onboardingSampleCreate: 'onboarding:sample-create', onboardingSampleDelete: 'onboarding:sample-delete',
   setUnsavedChanges: 'lifecycle:set-unsaved-changes',

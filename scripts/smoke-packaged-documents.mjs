@@ -444,12 +444,17 @@ async function main() {
     await app.renderer.evaluate("document.querySelector('.onboarding-launch').click(); true");
     await waitForUi(app, "Boolean(document.querySelector('.onboarding-checklist'))");
     assert.equal(await app.renderer.evaluate("document.querySelector('[aria-label=\"上手任务进度\"]')?.getAttribute('aria-valuenow')"), '50');
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.onboarding-context-actions button')).find((button) => button.textContent.includes('重新查看快速介绍')).click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.onboarding-welcome'))");
+    assert(await app.renderer.evaluate("document.querySelector('.onboarding-welcome')?.textContent?.includes('不会重置任务、图谱、学习记录或掌握进度') === true"));
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.onboarding-welcome-footer button')).find((button) => button.textContent.includes('返回任务指南')).click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.onboarding-checklist'))");
     await app.renderer.evaluate("document.querySelector('.onboarding-delete-sample').click(); true");
     await waitForUi(app, "Boolean(document.querySelector('[role=alertdialog]'))");
     await app.renderer.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).find((button) => button.textContent.includes('删除示例图谱')).click(); true");
     await waitForUi(app, "!document.querySelector('.graph-name') && !document.querySelector('[role=alertdialog]')");
     assert.equal((await apiCall(app, 'graphs', 'list()')).length, 0);
-    console.log('通过：首次欢迎、示例体验、任务进度和示例安全删除');
+    console.log('通过：首次欢迎、快速介绍重看、示例体验、任务进度和示例安全删除');
 
     if (globalThis.process.argv.includes('--review-private-books')) {
       await reviewPrivateBooks(app);
@@ -584,6 +589,11 @@ async function main() {
     const firstWorkspace = await apiCall(app, 'candidates', `getWorkspace(${JSON.stringify(candidateGraph.id)})`);
     assert.equal(firstWorkspace.pendingConceptCount, 1);
     assert.equal(firstWorkspace.concepts[0].sourceQuote, '模型');
+    await apiCall(app, 'candidates', `updateConcept(${JSON.stringify({
+      candidateId: firstWorkspace.concepts[0].id,
+      name: '模型',
+      description: '模型把从数据中学习到的规律用于预测或判断。',
+    })})`);
     await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭学习路线预览\"]').click(); true");
     await waitForUi(app, "!document.querySelector('.candidate-workspace')");
 
@@ -625,9 +635,12 @@ async function main() {
     assert(candidateWorkspace.concepts.every((item) => item.status === 'ACCEPTED'));
     console.log('通过：界面原文选区、候选关系审核与事务写入');
 
-    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('完成，返回图谱')).click(); true");
-    await waitForUi(app, "!document.querySelector('.candidate-workspace')");
-    await app.renderer.evaluate("document.querySelector('[aria-label=\"关闭资料库\"]').click(); true");
+    await app.renderer.evaluate("Array.from(document.querySelectorAll('.candidate-workspace > footer button')).find((button) => button.textContent.includes('开始学习')).click(); true");
+    await waitForUi(app, "Boolean(document.querySelector('.learning-session-runner')) && !document.querySelector('.document-library')");
+    assert(await app.renderer.evaluate("document.querySelector('.learning-session-runner')?.textContent?.includes('模型') === true"));
+    await app.renderer.evaluate("document.querySelector('[aria-label=\"保存并关闭学习会话\"]').click(); true");
+    await waitForUi(app, "!document.querySelector('.learning-session-runner')");
+    console.log('通过：确认路线后可直接开始第一个可学习概念');
     await waitForUi(app, "Boolean(document.querySelector('.graph-progress-overview'))");
     assert(await app.renderer.evaluate("document.querySelector('.graph-progress-overview')?.textContent?.includes('0 / 2 个概念已掌握') === true"));
     assert(await app.renderer.evaluate("document.querySelector('.graph-progress-overview')?.textContent?.includes('题库覆盖，不计入进度') === true"));

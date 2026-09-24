@@ -587,22 +587,22 @@ export function App(): React.JSX.Element {
   }, [showNotice]);
 
   const chooseManualStart = useCallback(async (): Promise<void> => {
-    if (!await updateOnboardingStatus('IN_PROGRESS')) return;
+    if (onboardingState?.status === 'NOT_STARTED' && !await updateOnboardingStatus('IN_PROGRESS')) return;
     setOnboardingOpen(false);
     setOnboardingWelcome(false);
     showNotice(graphs.length
       ? '已进入手工模式。可以选择已有图谱，或在左侧创建新的学习目标。'
       : '先在左侧输入学习目标名称，再创建第一张图谱。');
     window.setTimeout(() => newGraphNameInputRef.current?.focus(), 0);
-  }, [graphs.length, showNotice, updateOnboardingStatus]);
+  }, [graphs.length, onboardingState?.status, showNotice, updateOnboardingStatus]);
 
   const chooseImportStart = useCallback(async (): Promise<void> => {
-    if (!await updateOnboardingStatus('IN_PROGRESS')) return;
+    if (onboardingState?.status === 'NOT_STARTED' && !await updateOnboardingStatus('IN_PROGRESS')) return;
     setOnboardingOpen(false);
     setOnboardingWelcome(false);
     setDocumentLibraryOpen(true);
     showNotice('请选择本地资料；正文会先在本机解析和预览，不会自动上传。');
-  }, [showNotice, updateOnboardingStatus]);
+  }, [onboardingState?.status, showNotice, updateOnboardingStatus]);
 
   const chooseSampleStart = useCallback(async (): Promise<void> => {
     setBusy(true);
@@ -973,6 +973,8 @@ export function App(): React.JSX.Element {
           onChooseImport={() => void chooseImportStart()}
           onChooseSample={() => void chooseSampleStart()}
           onDismiss={() => void dismissOnboarding()}
+          onReplayWelcome={() => setOnboardingWelcome(true)}
+          onReturnToChecklist={() => setOnboardingWelcome(false)}
           onFinish={() => void finishOnboarding()}
           onTaskAction={handleOnboardingTask}
           onDeleteSample={requestDeleteSample}
@@ -1028,6 +1030,13 @@ export function App(): React.JSX.Element {
             setEvidenceState(null);
             setRecommendationRevision((current) => current + 1);
             void refreshOnboarding();
+          }}
+          onStartLearning={(nodeId) => {
+            setDocumentLibraryOpen(false);
+            setSelectedNodeId(nodeId);
+            setNewNodeToFocusId(null);
+            setSessionLaunch({ nodeId, action: 'TEACH' });
+            showNotice('学习路线已准备好，从第一个可学习概念开始。', 'success');
           }}
           onMessage={showNotice}
         />
